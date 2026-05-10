@@ -3,5 +3,5 @@ node_modules/
 .anchor/
 .env
 *.so
-idl/
 skill/node_modules/
+skill/dist/
