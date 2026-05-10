@@ -1,19 +1,19 @@
 {
   "schema_version": "v1",
-  "id": "sol-wager",
-  "name_for_human": "Sol Wager",
-  "name_for_model": "sol_wager",
-  "description_for_human": "Peer-to-peer on-chain price wagers settled by Chainlink oracles on Solana",
-  "description_for_model": "Propose, accept, and settle peer-to-peer SOL wagers verified by Chainlink price feeds. Proposers escrow stake immediately in a public on-chain account any agent can discover and accept. Supports PRICE_ABOVE, PRICE_BELOW, PRICE_BETWEEN, and PRICE_CHANGE_PCT conditions. Settlement is permissionless — anyone can trigger it once the expiry slot passes.",
+  "id": "clawpact",
+  "name_for_human": "ClawPact",
+  "name_for_model": "clawpact",
+  "description_for_human": "Agent-to-agent oracle-verified escrow and settlement on Solana",
+  "description_for_model": "Two agents lock SOL, define a Chainlink price condition, and settle automatically at a specified slot. No platform or human arbitration — the oracle decides. Supports PRICE_ABOVE, PRICE_BELOW, PRICE_BETWEEN, and PRICE_CHANGE_PCT conditions. Open proposals are publicly discoverable; settlement is permissionless.",
 
   "network": "mainnet-beta",
   "program_id": "GJYEW4jBbBZTVNTdG2AB3EHjC39hFuWWZjaxvDUpmZ3i",
   "meta_pda": "DsHfsWqQrjzDCNieBKxrPF92bRMopSuCeGmVGXd5G8o6",
 
   "openclaw": {
-    "package": "@openclaw/sol-wager",
+    "package": "@jkr26/clawpact",
     "repository": "https://github.com/jkr26/sol_dsl",
-    "install": "npm install @openclaw/sol-wager"
+    "install": "npm install @jkr26/clawpact"
   },
 
   "discovery": {
@@ -53,17 +53,17 @@
   },
 
   "tools": [
-    { "name": "wager_propose_open",    "description": "Post a public open proposal with stake escrowed (single sig)" },
-    { "name": "wager_accept_proposal", "description": "Accept an open proposal by on-chain address" },
-    { "name": "wager_cancel_proposal", "description": "Cancel your own unaccepted proposal and reclaim stake" },
-    { "name": "wager_list_open",       "description": "List all live open proposals on-chain" },
-    { "name": "wager_propose",         "description": "Create bilateral (two-sig) wager with durable nonce tx" },
-    { "name": "wager_inspect",         "description": "Verify a received tx_hex matches its accompanying DSL" },
-    { "name": "wager_accept",          "description": "Countersign and submit a bilateral wager" },
-    { "name": "wager_settle",          "description": "Settle an expired wager — permissionless" },
-    { "name": "wager_watch",           "description": "Register a wager for automatic settlement tracking" },
-    { "name": "wager_check_pending",   "description": "Settle all expired watched wagers in the local store" },
-    { "name": "wager_capabilities",    "description": "Full capabilities document plus live open proposals" }
+    { "name": "pact_propose_open",    "description": "Post a public open proposal with stake escrowed (single sig)" },
+    { "name": "pact_accept_proposal", "description": "Accept an open proposal by on-chain address" },
+    { "name": "pact_cancel_proposal", "description": "Cancel your own unaccepted proposal and reclaim stake" },
+    { "name": "pact_list_open",       "description": "List all live open proposals on-chain" },
+    { "name": "pact_propose",         "description": "Create bilateral (two-sig) wager with durable nonce tx" },
+    { "name": "pact_inspect",         "description": "Verify a received tx_hex matches its accompanying DSL" },
+    { "name": "pact_accept",          "description": "Countersign and submit a bilateral wager" },
+    { "name": "pact_settle",          "description": "Settle an expired wager — permissionless" },
+    { "name": "pact_watch",           "description": "Register a wager for automatic settlement tracking" },
+    { "name": "pact_check_pending",   "description": "Settle all expired watched wagers in the local store" },
+    { "name": "pact_capabilities",    "description": "Full capabilities document plus live open proposals" }
   ],
 
   "conditions": {

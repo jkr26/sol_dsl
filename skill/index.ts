@@ -6,7 +6,7 @@ import { FileAuditBackend, wrapWithAudit } from "./src/audit";
 
 const DEFAULT_WALLET = path.join(os.homedir(), ".config", "solana", "id.json");
 const DEFAULT_RPC = "https://api.mainnet-beta.solana.com";
-const DEFAULT_STORE = path.join(os.homedir(), ".openclaw", "sol-wager", "pending.json");
+const DEFAULT_STORE = path.join(os.homedir(), ".openclaw", "clawpact", "pending.json");
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const IDL = require("./idl.json");
@@ -33,7 +33,7 @@ function adaptTool(
 }
 
 export function register(api: any): void {
-  const pluginCfg = (api.config?.plugins?.["sol-wager"] ?? {}) as Record<string, string>;
+  const pluginCfg = (api.config?.plugins?.["clawpact"] ?? {}) as Record<string, string>;
 
   const cfg = {
     walletPath: resolveStorePath(
@@ -49,7 +49,7 @@ export function register(api: any): void {
 
   const auditPath = resolveStorePath(
     pluginCfg.auditPath ?? process.env.SOL_WAGER_AUDIT_PATH ??
-    path.join(os.homedir(), ".openclaw", "sol-wager", "audit.jsonl")
+    path.join(os.homedir(), ".openclaw", "clawpact", "audit.jsonl")
   );
   const audit = new FileAuditBackend(auditPath);
 

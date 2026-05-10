@@ -97,9 +97,9 @@ export function registerWagerTools(cfg: PluginConfig) {
   return {
 
     // -----------------------------------------------------------------------
-    // wager_propose
+    // pact_propose
     // -----------------------------------------------------------------------
-    wager_propose: {
+    pact_propose: {
       description:
         "Generate a Claw-DSL wager proposal and a durable-nonce transaction " +
         "pre-signed by this agent as proposer. Send the returned bundle to the counterparty.",
@@ -204,7 +204,7 @@ export function registerWagerTools(cfg: PluginConfig) {
             tx_hex,
             wager_pda: wagerPda.toBase58(),
             next_step:
-              "Send this bundle to the counterparty. Also call wager_watch so " +
+              "Send this bundle to the counterparty. Also call pact_watch so " +
               "settlement is tracked automatically if they accept.",
           };
         } catch (e: unknown) {
@@ -214,12 +214,12 @@ export function registerWagerTools(cfg: PluginConfig) {
     },
 
     // -----------------------------------------------------------------------
-    // wager_inspect
+    // pact_inspect
     // -----------------------------------------------------------------------
-    wager_inspect: {
+    pact_inspect: {
       description:
         "Verify that a received tx_hex was compiled from the accompanying DSL. " +
-        "Always call this before wager_accept.",
+        "Always call this before pact_accept.",
       parameters: Type.Object({
         dsl: Type.Object({}, { description: "The Claw-DSL object from the proposer", additionalProperties: true }),
         tx_hex: Type.String({ description: "Hex-encoded transaction from the proposer" }),
@@ -250,12 +250,12 @@ export function registerWagerTools(cfg: PluginConfig) {
     },
 
     // -----------------------------------------------------------------------
-    // wager_accept
+    // pact_accept
     // -----------------------------------------------------------------------
-    wager_accept: {
+    pact_accept: {
       description:
         "Countersign a verified wager proposal as counterparty and submit it to Solana. " +
-        "Both stakes are escrowed atomically. Only call after wager_inspect returns verified: true.",
+        "Both stakes are escrowed atomically. Only call after pact_inspect returns verified: true.",
       parameters: Type.Object({
         tx_hex: Type.String({ description: "The tx_hex from the proposer's bundle" }),
       }),
@@ -278,7 +278,7 @@ export function registerWagerTools(cfg: PluginConfig) {
             success: true,
             signature,
             next_step:
-              "Wager escrowed. Call wager_watch with the DSL to register automatic settlement.",
+              "Wager escrowed. Call pact_watch with the DSL to register automatic settlement.",
             explorer: `https://explorer.solana.com/tx/${signature}?cluster=devnet`,
           };
         } catch (e: unknown) {
@@ -288,9 +288,9 @@ export function registerWagerTools(cfg: PluginConfig) {
     },
 
     // -----------------------------------------------------------------------
-    // wager_settle
+    // pact_settle
     // -----------------------------------------------------------------------
-    wager_settle: {
+    pact_settle: {
       description:
         "Settle an expired wager. Supply the address you believe won — the program " +
         "verifies on-chain and reverts if wrong. Permissionless.",
@@ -341,12 +341,12 @@ export function registerWagerTools(cfg: PluginConfig) {
     },
 
     // -----------------------------------------------------------------------
-    // wager_watch
+    // pact_watch
     // -----------------------------------------------------------------------
-    wager_watch: {
+    pact_watch: {
       description:
         "Register a wager for automatic settlement tracking. Returns a check_at " +
-        "timestamp — schedule wager_check_pending for that time.",
+        "timestamp — schedule pact_check_pending for that time.",
       parameters: Type.Object({
         dsl: Type.Object({}, { description: "The Claw-DSL object for this wager", additionalProperties: true }),
         wager_pda: Type.String({ description: "Base58 wager PDA from the proposal bundle" }),
@@ -380,7 +380,7 @@ export function registerWagerTools(cfg: PluginConfig) {
             slots_remaining: slotsRemaining,
             check_at: checkAt.toISOString(),
             check_in_seconds: Math.ceil((checkAt.getTime() - Date.now()) / 1000),
-            next_step: `Schedule wager_check_pending at ${checkAt.toISOString()}. No further action needed until then.`,
+            next_step: `Schedule pact_check_pending at ${checkAt.toISOString()}. No further action needed until then.`,
           };
         } catch (e: unknown) {
           return { success: false, error: String(e) };
@@ -389,13 +389,13 @@ export function registerWagerTools(cfg: PluginConfig) {
     },
 
     // -----------------------------------------------------------------------
-    // wager_propose_open  (single-sig; creates discoverable WagerProposal)
+    // pact_propose_open  (single-sig; creates discoverable WagerProposal)
     // -----------------------------------------------------------------------
-    wager_propose_open: {
+    pact_propose_open: {
       description:
         "Open a public wager proposal on-chain — only you sign. Your stake is " +
-        "escrowed immediately. Any agent can discover and accept it via wager_capabilities " +
-        "or wager_accept_proposal. One open proposal per wallet at a time.",
+        "escrowed immediately. Any agent can discover and accept it via pact_capabilities " +
+        "or pact_accept_proposal. One open proposal per wallet at a time.",
       parameters: Type.Object({
         oracle_feed: Type.String({ description: "Base58 Chainlink aggregator address" }),
         condition: Type.String({ description: "PRICE_BELOW | PRICE_ABOVE | PRICE_BETWEEN | PRICE_CHANGE_PCT" }),
@@ -463,8 +463,8 @@ export function registerWagerTools(cfg: PluginConfig) {
             proposer_stake_sol: args.proposer_stake_sol,
             counterparty_stake_sol: args.counterparty_stake_sol,
             next_step:
-              "Proposal is live on-chain. Other agents will see it via wager_capabilities. " +
-              "To cancel before acceptance, call wager_cancel_proposal.",
+              "Proposal is live on-chain. Other agents will see it via pact_capabilities. " +
+              "To cancel before acceptance, call pact_cancel_proposal.",
           };
         } catch (e: unknown) {
           return { success: false, error: String(e) };
@@ -473,9 +473,9 @@ export function registerWagerTools(cfg: PluginConfig) {
     },
 
     // -----------------------------------------------------------------------
-    // wager_accept_proposal
+    // pact_accept_proposal
     // -----------------------------------------------------------------------
-    wager_accept_proposal: {
+    pact_accept_proposal: {
       description:
         "Accept an open wager proposal by its on-chain address. Your stake is escrowed " +
         "atomically with the proposer's. The wager is now active and will settle at expiry.",
@@ -537,8 +537,8 @@ export function registerWagerTools(cfg: PluginConfig) {
             expiry_slot: proposal.expiry_slot.toNumber(),
             signature: sig,
             next_step:
-              "Wager is active. Call wager_watch to register automatic settlement, " +
-              "or wager_settle manually after expiry_slot.",
+              "Wager is active. Call pact_watch to register automatic settlement, " +
+              "or pact_settle manually after expiry_slot.",
           };
         } catch (e: unknown) {
           return { success: false, error: String(e) };
@@ -547,9 +547,9 @@ export function registerWagerTools(cfg: PluginConfig) {
     },
 
     // -----------------------------------------------------------------------
-    // wager_cancel_proposal
+    // pact_cancel_proposal
     // -----------------------------------------------------------------------
-    wager_cancel_proposal: {
+    pact_cancel_proposal: {
       description:
         "Cancel your own open WagerProposal (before it is accepted). " +
         "Your full stake and rent are returned immediately.",
@@ -588,9 +588,9 @@ export function registerWagerTools(cfg: PluginConfig) {
     },
 
     // -----------------------------------------------------------------------
-    // wager_list_open
+    // pact_list_open
     // -----------------------------------------------------------------------
-    wager_list_open: {
+    pact_list_open: {
       description:
         "List all open WagerProposal accounts visible on-chain right now. " +
         "Returns proposals that have not yet expired or been accepted.",
@@ -620,9 +620,9 @@ export function registerWagerTools(cfg: PluginConfig) {
     },
 
     // -----------------------------------------------------------------------
-    // wager_capabilities  (the discovery document)
+    // pact_capabilities  (the discovery document)
     // -----------------------------------------------------------------------
-    wager_capabilities: {
+    pact_capabilities: {
       description:
         "Return the complete capabilities document for this wager protocol: how to " +
         "propose, accept, and settle wagers, what conditions are supported, risks, " +
@@ -643,7 +643,7 @@ export function registerWagerTools(cfg: PluginConfig) {
           return {
             success: true,
             capabilities: {
-              protocol: "sol-wager",
+              protocol: "clawpact",
               version: "1.0.0",
               program_id: cfg.programId,
               rpc_url: cfg.rpcUrl,
@@ -653,7 +653,7 @@ export function registerWagerTools(cfg: PluginConfig) {
                 "discover and accept it. Settlement is automatic via Chainlink price feeds.",
 
               how_to_propose: {
-                tool: "wager_propose_open",
+                tool: "pact_propose_open",
                 description:
                   "Create an open wager — your stake is escrowed immediately. " +
                   "One open proposal per wallet. Specify condition, oracle feed, expiry slot, " +
@@ -670,7 +670,7 @@ export function registerWagerTools(cfg: PluginConfig) {
               },
 
               how_to_accept: {
-                tool: "wager_accept_proposal",
+                tool: "pact_accept_proposal",
                 description:
                   "Accept any open proposal by its on-chain address. " +
                   "Your counterparty_stake is escrowed atomically. Cannot be cancelled after acceptance.",
@@ -678,7 +678,7 @@ export function registerWagerTools(cfg: PluginConfig) {
               },
 
               how_to_settle: {
-                tool: "wager_settle",
+                tool: "pact_settle",
                 description:
                   "Settle an expired wager. Permissionless — anyone can call. " +
                   "Chainlink oracle determines the winner; all escrowed SOL goes to them.",
@@ -742,12 +742,12 @@ export function registerWagerTools(cfg: PluginConfig) {
     },
 
     // -----------------------------------------------------------------------
-    // wager_check_pending
+    // pact_check_pending
     // -----------------------------------------------------------------------
-    wager_check_pending: {
+    pact_check_pending: {
       description:
         "Check all watched wagers and settle any that have passed their expiry_slot. " +
-        "Called automatically by the schedule set up via wager_watch.",
+        "Called automatically by the schedule set up via pact_watch.",
       parameters: Type.Object({}),
 
       handler: async () => {

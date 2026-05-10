@@ -1,37 +1,37 @@
 {
-  "id": "sol-wager",
-  "name": "Sol Wager",
+  "id": "clawpact",
+  "name": "ClawPact",
   "version": "0.1.0",
-  "description": "Claw-DSL wager protocol — peer-to-peer SOL wagers verified by Chainlink price feeds",
+  "description": "Agent-to-agent oracle-verified escrow and settlement on Solana. Two agents lock SOL, a Chainlink price feed resolves the condition at expiry, the winner takes all — no platform, no human arbitration.",
 
   "contracts": {
     "tools": [
-      "wager_propose",
-      "wager_inspect",
-      "wager_accept",
-      "wager_settle",
-      "wager_watch",
-      "wager_check_pending",
-      "wager_propose_open",
-      "wager_accept_proposal",
-      "wager_cancel_proposal",
-      "wager_list_open",
-      "wager_capabilities"
+      "pact_propose",
+      "pact_inspect",
+      "pact_accept",
+      "pact_settle",
+      "pact_watch",
+      "pact_check_pending",
+      "pact_propose_open",
+      "pact_accept_proposal",
+      "pact_cancel_proposal",
+      "pact_list_open",
+      "pact_capabilities"
     ]
   },
 
   "toolMetadata": {
-    "wager_propose":          { "optional": true },
-    "wager_inspect":          { "optional": true },
-    "wager_accept":           { "optional": true },
-    "wager_settle":           { "optional": true },
-    "wager_watch":            { "optional": true },
-    "wager_check_pending":    { "optional": true },
-    "wager_propose_open":     { "optional": true },
-    "wager_accept_proposal":  { "optional": true },
-    "wager_cancel_proposal":  { "optional": true },
-    "wager_list_open":        { "optional": true },
-    "wager_capabilities":     { "optional": true }
+    "pact_propose":          { "optional": true },
+    "pact_inspect":          { "optional": true },
+    "pact_accept":           { "optional": true },
+    "pact_settle":           { "optional": true },
+    "pact_watch":            { "optional": true },
+    "pact_check_pending":    { "optional": true },
+    "pact_propose_open":     { "optional": true },
+    "pact_accept_proposal":  { "optional": true },
+    "pact_cancel_proposal":  { "optional": true },
+    "pact_list_open":        { "optional": true },
+    "pact_capabilities":     { "optional": true }
   },
 
   "activation": {
@@ -54,13 +54,13 @@
       },
       "storePath": {
         "type": "string",
-        "description": "Path to the pending wager JSON store",
-        "default": "~/.openclaw/sol-wager/pending.json"
+        "description": "Path to the pending pact JSON store",
+        "default": "~/.openclaw/clawpact/pending.json"
       },
       "auditPath": {
         "type": "string",
         "description": "Path to the append-only audit log (JSONL)",
-        "default": "~/.openclaw/sol-wager/audit.jsonl"
+        "default": "~/.openclaw/clawpact/audit.jsonl"
       }
     }
   }
