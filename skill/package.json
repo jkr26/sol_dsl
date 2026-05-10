@@ -1,0 +1,13 @@
+{
+  "name": "@openclaw/sol-wager-skill",
+  "version": "0.1.0",
+  "description": "OpenClaw skill: peer-to-peer Solana wager via Chainlink oracle",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.30.0",
+    "@openclaw/plugin-sdk": "^1.0.0",
+    "@solana/web3.js": "^1.95.0",
+    "borsh": "^2.0.0"
+  }
+}

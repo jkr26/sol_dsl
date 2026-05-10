@@ -1,0 +1,18 @@
+{
+  "name": "sol-dsl",
+  "version": "0.1.0",
+  "description": "Solana Agent-Wager framework: Claw-DSL + Anchor + OpenClaw skill",
+  "scripts": {
+    "build": "anchor build",
+    "test": "anchor test",
+    "verify": "node verify/index.js"
+  },
+  "devDependencies": {
+    "@coral-xyz/anchor": "^0.30.0",
+    "@solana/web3.js": "^1.95.0",
+    "typescript": "^5.0.0",
+    "ts-mocha": "^10.0.0",
+    "@types/mocha": "^10.0.0"
+  },
+  "license": "MIT"
+}

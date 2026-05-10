@@ -1,0 +1,113 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/claw-dsl/wager/v1",
+  "title": "ClawDSL-Wager",
+  "description": "Claw-DSL v1: declarative schema for a peer-to-peer agent wager on Solana",
+  "type": "object",
+  "required": [
+    "version",
+    "proposer",
+    "counterparty",
+    "oracle_feed",
+    "condition",
+    "expiry_slot",
+    "proposer_stake",
+    "counterparty_stake"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "enum": ["1"],
+      "description": "Schema version"
+    },
+    "proposer": {
+      "type": "string",
+      "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$",
+      "description": "Base58 public key of the proposing agent"
+    },
+    "counterparty": {
+      "type": "string",
+      "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$",
+      "description": "Base58 public key of the counterparty agent"
+    },
+    "oracle_feed": {
+      "type": "string",
+      "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$",
+      "description": "Base58 public key of the Chainlink on-chain aggregator account"
+    },
+    "condition": {
+      "type": "string",
+      "enum": ["PRICE_BELOW", "PRICE_ABOVE", "PRICE_BETWEEN", "PRICE_CHANGE_PCT"],
+      "description": "Oracle condition that, if true at expiry, means the proposer wins"
+    },
+    "threshold": {
+      "type": "integer",
+      "description": "Raw Chainlink answer value for PRICE_BELOW / PRICE_ABOVE conditions. Units match the feed's decimal precision (e.g. 8 decimals for BTC/USD)."
+    },
+    "threshold_min": {
+      "type": "integer",
+      "description": "Lower bound (inclusive) for PRICE_BETWEEN, in raw Chainlink units"
+    },
+    "threshold_max": {
+      "type": "integer",
+      "description": "Upper bound (inclusive) for PRICE_BETWEEN, in raw Chainlink units"
+    },
+    "change_pct": {
+      "type": "integer",
+      "description": "Signed percentage change in basis points for PRICE_CHANGE_PCT. Positive = proposer bets price goes up; negative = down. 100 bps = 1%."
+    },
+    "snapshot_price": {
+      "type": "integer",
+      "description": "Reference price (raw Chainlink units) at wager creation time, used as the baseline for PRICE_CHANGE_PCT"
+    },
+    "expiry_slot": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Absolute Solana slot at which the wager is evaluated. NOTE: JavaScript integers are limited to 2^53-1; use a BigInt string representation and parse accordingly."
+    },
+    "proposer_stake": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Amount in lamports the proposer locks into escrow"
+    },
+    "counterparty_stake": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Amount in lamports the counterparty locks into escrow"
+    },
+    "nonce_account": {
+      "type": "string",
+      "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$",
+      "description": "Base58 public key of the durable nonce account used to keep the unsigned transaction valid while the counterparty reviews"
+    },
+    "nonce_authority": {
+      "type": "string",
+      "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$",
+      "description": "Base58 public key of the nonce authority (typically the proposer)"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp at which the DSL was generated (informational only)"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "condition": { "const": "PRICE_BELOW" } }, "required": ["condition"] },
+      "then": { "required": ["threshold"] }
+    },
+    {
+      "if": { "properties": { "condition": { "const": "PRICE_ABOVE" } }, "required": ["condition"] },
+      "then": { "required": ["threshold"] }
+    },
+    {
+      "if": { "properties": { "condition": { "const": "PRICE_BETWEEN" } }, "required": ["condition"] },
+      "then": { "required": ["threshold_min", "threshold_max"] }
+    },
+    {
+      "if": { "properties": { "condition": { "const": "PRICE_CHANGE_PCT" } }, "required": ["condition"] },
+      "then": { "required": ["change_pct", "snapshot_price"] }
+    }
+  ]
+}
