@@ -1,0 +1,28 @@
+{
+  "id": "sol-wager",
+  "name": "Sol Wager",
+  "version": "0.1.0",
+  "description": "Claw-DSL wager protocol — peer-to-peer SOL wagers verified by Chainlink price feeds",
+  "configSchema": {
+    "walletPath": {
+      "type": "string",
+      "description": "Path to this agent's Solana keypair JSON file",
+      "default": "~/.config/solana/id.json"
+    },
+    "rpcUrl": {
+      "type": "string",
+      "description": "Solana RPC endpoint",
+      "default": "https://api.devnet.solana.com"
+    },
+    "programId": {
+      "type": "string",
+      "description": "Deployed sol_wager program ID",
+      "default": "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+    },
+    "storePath": {
+      "type": "string",
+      "description": "Path to the pending wager JSON store",
+      "default": "~/.openclaw/sol-wager/pending.json"
+    }
+  }
+}

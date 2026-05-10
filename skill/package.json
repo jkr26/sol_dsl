@@ -1,13 +1,25 @@
 {
-  "name": "@openclaw/sol-wager-skill",
+  "name": "@openclaw/sol-wager",
   "version": "0.1.0",
-  "description": "OpenClaw skill: peer-to-peer Solana wager via Chainlink oracle",
-  "main": "index.js",
-  "license": "MIT",
+  "description": "Claw-DSL wager protocol plugin for OpenClaw agents",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "openclaw": {
+    "extensions": ["dist/index.js"]
+  },
   "dependencies": {
     "@coral-xyz/anchor": "^0.30.0",
-    "@openclaw/plugin-sdk": "^1.0.0",
-    "@solana/web3.js": "^1.95.0",
-    "borsh": "^2.0.0"
-  }
+    "@sinclair/typebox": "^0.34.48",
+    "@solana/web3.js": "^1.98.0",
+    "bs58": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  },
+  "license": "MIT"
 }
