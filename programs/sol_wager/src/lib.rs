@@ -70,6 +70,124 @@ pub mod sol_wager {
         Ok(())
     }
 
+    /// Creates an open wager proposal visible to all agents.
+    /// Only the proposer signs; their stake is escrowed into the proposal PDA.
+    /// Any counterparty can accept via accept_wager.
+    pub fn propose_wager(ctx: Context<ProposeWager>, params: WagerParams) -> Result<()> {
+        params.validate()?;
+
+        let (proposer_key, expiry_slot) = {
+            let p = &mut ctx.accounts.proposal;
+            p.proposer = ctx.accounts.proposer.key();
+            p.oracle_feed = ctx.accounts.oracle_feed.key();
+            p.condition = params.condition;
+            p.threshold = params.threshold;
+            p.threshold_min = params.threshold_min;
+            p.threshold_max = params.threshold_max;
+            p.change_pct = params.change_pct;
+            p.snapshot_price = params.snapshot_price;
+            p.expiry_slot = params.expiry_slot;
+            p.proposer_stake = params.proposer_stake;
+            p.counterparty_stake = params.counterparty_stake;
+            p.bump = ctx.bumps.proposal;
+            (p.proposer, p.expiry_slot)
+        };
+
+        anchor_lang::system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.proposer.to_account_info(),
+                    to: ctx.accounts.proposal.to_account_info(),
+                },
+            ),
+            params.proposer_stake,
+        )?;
+
+        emit!(ProposalCreated {
+            proposal: ctx.accounts.proposal.key(),
+            proposer: proposer_key,
+            expiry_slot,
+        });
+
+        Ok(())
+    }
+
+    /// Accepts an open WagerProposal as counterparty.
+    /// Proposer's escrowed stake moves proposal→wager; counterparty deposits theirs.
+    /// Proposal account is closed and its rent returned to the proposer.
+    pub fn accept_wager(ctx: Context<AcceptWager>) -> Result<()> {
+        let clock = Clock::get()?;
+        require!(
+            clock.slot < ctx.accounts.proposal.expiry_slot,
+            WagerError::ProposalExpired
+        );
+
+        let proposer_key = ctx.accounts.proposal.proposer;
+        let proposer_stake = ctx.accounts.proposal.proposer_stake;
+        let counterparty_stake = ctx.accounts.proposal.counterparty_stake;
+        let oracle_feed = ctx.accounts.proposal.oracle_feed;
+        let condition = ctx.accounts.proposal.condition.clone();
+        let threshold = ctx.accounts.proposal.threshold;
+        let threshold_min = ctx.accounts.proposal.threshold_min;
+        let threshold_max = ctx.accounts.proposal.threshold_max;
+        let change_pct = ctx.accounts.proposal.change_pct;
+        let snapshot_price = ctx.accounts.proposal.snapshot_price;
+        let expiry_slot = ctx.accounts.proposal.expiry_slot;
+
+        // Escrow counterparty's stake into the wager PDA.
+        // The proposal's lamports (stake + rent) are moved to wager by `close = wager` below.
+        anchor_lang::system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.counterparty.to_account_info(),
+                    to: ctx.accounts.wager.to_account_info(),
+                },
+            ),
+            counterparty_stake,
+        )?;
+
+        {
+            let wager = &mut ctx.accounts.wager;
+            wager.proposer = proposer_key;
+            wager.counterparty = ctx.accounts.counterparty.key();
+            wager.oracle_feed = oracle_feed;
+            wager.condition = condition;
+            wager.threshold = threshold;
+            wager.threshold_min = threshold_min;
+            wager.threshold_max = threshold_max;
+            wager.change_pct = change_pct;
+            wager.snapshot_price = snapshot_price;
+            wager.expiry_slot = expiry_slot;
+            wager.proposer_stake = proposer_stake;
+            wager.counterparty_stake = counterparty_stake;
+            wager.state = WagerState::Active;
+            wager.bump = ctx.bumps.wager;
+        }
+
+        emit!(WagerInitialised {
+            wager: ctx.accounts.wager.key(),
+            proposer: proposer_key,
+            counterparty: ctx.accounts.counterparty.key(),
+            expiry_slot,
+        });
+
+        Ok(())
+        // `close = wager` moves proposal lamports (proposer_stake + rent) into the wager pot.
+        // Winner takes everything including both rent deposits on settlement.
+    }
+
+    /// Cancels an open proposal and returns the escrowed stake + rent to the proposer.
+    pub fn cancel_proposal(ctx: Context<CancelProposal>) -> Result<()> {
+        emit!(ProposalCancelled {
+            proposal: ctx.accounts.proposal.key(),
+            proposer: ctx.accounts.proposer.key(),
+        });
+        Ok(())
+        // Anchor's `close = proposer` returns all lamports (stake + rent)
+    }
+
     /// Settles an expired wager by reading the Chainlink feed and sending all
     /// escrowed lamports (including rent) to the winner.
     /// Permissionless — either party may call once `expiry_slot` has passed.
@@ -192,6 +310,72 @@ pub struct SettleWager<'info> {
     pub system_program: Program<'info, System>,
 }
 
+#[derive(Accounts)]
+pub struct ProposeWager<'info> {
+    #[account(mut)]
+    pub proposer: Signer<'info>,
+
+    #[account(
+        init,
+        payer = proposer,
+        space = WagerProposal::SPACE,
+        seeds = [b"proposal", proposer.key().as_ref()],
+        bump
+    )]
+    pub proposal: Account<'info, WagerProposal>,
+
+    /// CHECK: Chainlink aggregator feed — stored in proposal.oracle_feed
+    pub oracle_feed: AccountInfo<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct AcceptWager<'info> {
+    #[account(mut)]
+    pub counterparty: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"proposal", proposal.proposer.as_ref()],
+        bump = proposal.bump,
+        has_one = oracle_feed @ WagerError::InvalidFeed,
+        close = wager
+    )]
+    pub proposal: Account<'info, WagerProposal>,
+
+    #[account(
+        init,
+        payer = counterparty,
+        space = Wager::SPACE,
+        seeds = [b"wager", proposal.proposer.as_ref(), counterparty.key().as_ref()],
+        bump
+    )]
+    pub wager: Account<'info, Wager>,
+
+    /// CHECK: Chainlink feed — verified against proposal.oracle_feed via has_one
+    pub oracle_feed: AccountInfo<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct CancelProposal<'info> {
+    #[account(mut)]
+    pub proposer: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"proposal", proposer.key().as_ref()],
+        bump = proposal.bump,
+        has_one = proposer @ WagerError::InvalidProposer,
+        close = proposer
+    )]
+    pub proposal: Account<'info, WagerProposal>,
+
+    pub system_program: Program<'info, System>,
+}
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -217,6 +401,27 @@ pub struct Wager {
 impl Wager {
     // 8 discriminator + field sizes above
     pub const SPACE: usize = 8 + 32 + 32 + 32 + 1 + 16 + 16 + 16 + 4 + 16 + 8 + 8 + 8 + 1 + 1;
+}
+
+/// An open, single-signature wager proposal.  Any agent can accept it.
+#[account]
+pub struct WagerProposal {
+    pub proposer: Pubkey,          // 32
+    pub oracle_feed: Pubkey,       // 32
+    pub condition: WagerCondition, // 1
+    pub threshold: i128,           // 16
+    pub threshold_min: i128,       // 16
+    pub threshold_max: i128,       // 16
+    pub change_pct: i32,           // 4
+    pub snapshot_price: i128,      // 16
+    pub expiry_slot: u64,          // 8
+    pub proposer_stake: u64,       // 8
+    pub counterparty_stake: u64,   // 8
+    pub bump: u8,                  // 1
+}
+
+impl WagerProposal {
+    pub const SPACE: usize = 8 + 32 + 32 + 1 + 16 + 16 + 16 + 4 + 16 + 8 + 8 + 8 + 1;
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq)]
@@ -284,6 +489,19 @@ pub struct WagerInitialised {
 }
 
 #[event]
+pub struct ProposalCreated {
+    pub proposal: Pubkey,
+    pub proposer: Pubkey,
+    pub expiry_slot: u64,
+}
+
+#[event]
+pub struct ProposalCancelled {
+    pub proposal: Pubkey,
+    pub proposer: Pubkey,
+}
+
+#[event]
 pub struct WagerSettled {
     pub wager: Pubkey,
     pub proposer: Pubkey,
@@ -322,6 +540,8 @@ pub enum WagerError {
     InvalidSnapshot,
     #[msg("Arithmetic overflow")]
     MathOverflow,
+    #[msg("Proposal has already expired")]
+    ProposalExpired,
 }
 
 // ---------------------------------------------------------------------------

@@ -395,6 +395,120 @@ async function main() {
   });
 
   // ────────────────────────────────────────────────────────────────────────────
+  // SUITE 5: discovery — propose_wager / accept_wager / cancel_proposal
+  // ────────────────────────────────────────────────────────────────────────────
+  console.log("\n── Suite 5: discovery — open proposals ──");
+
+  const dp = web3.Keypair.generate(), dc = web3.Keypair.generate();
+  await airdrop(connection, dp.publicKey, 5_000_000_000);
+  await airdrop(connection, dc.publicKey, 5_000_000_000);
+
+  const [proposalPda] = web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("proposal"), dp.publicKey.toBuffer()], PROGRAM_ID
+  );
+  const dprog = new anchor.Program(IDL, new anchor.AnchorProvider(connection, makeWallet(dp), {}));
+  const dcprog = new anchor.Program(IDL, new anchor.AnchorProvider(connection, makeWallet(dc), {}));
+
+  let discoveryExpirySlot;
+
+  await test("propose_wager creates WagerProposal on-chain (single sig)", async () => {
+    const slot = await connection.getSlot("confirmed");
+    discoveryExpirySlot = slot + 30;
+    await dprog.methods
+      .proposeWager({
+        condition: { priceAbove: {} },
+        threshold: new BN("1"),
+        thresholdMin: new BN(0), thresholdMax: new BN(0),
+        changePct: 0, snapshotPrice: new BN(0),
+        expirySlot: new BN(discoveryExpirySlot),
+        proposerStake: new BN(300_000_000),
+        counterpartyStake: new BN(300_000_000),
+      })
+      .accounts({
+        proposer: dp.publicKey,
+        proposal: proposalPda,
+        oracleFeed: CHAINLINK_FEED,
+        systemProgram: web3.SystemProgram.programId,
+      })
+      .rpc();
+
+    const p = await dprog.account.wagerProposal.fetch(proposalPda);
+    assert.equal(p.proposer.toBase58(), dp.publicKey.toBase58());
+    assert.equal(p.proposerStake.toNumber(), 300_000_000);
+    assert.equal(p.counterpartyStake.toNumber(), 300_000_000);
+    assert.deepStrictEqual(p.condition, { priceAbove: {} });
+    console.log(`     Proposal PDA: ${proposalPda.toBase58()}`);
+  });
+
+  await test("getProgramAccounts finds the open proposal", async () => {
+    const all = await dprog.account.wagerProposal.all();
+    const found = all.find(p => p.publicKey.toBase58() === proposalPda.toBase58());
+    assert(found, "proposal not found in getProgramAccounts");
+    console.log(`     Found ${all.length} total proposal(s) on-chain`);
+  });
+
+  await test("accept_wager converts proposal → active Wager", async () => {
+    const [wagerPda] = web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("wager"), dp.publicKey.toBuffer(), dc.publicKey.toBuffer()], PROGRAM_ID
+    );
+
+    const oracleFeed = (await dprog.account.wagerProposal.fetch(proposalPda)).oracleFeed;
+
+    await dcprog.methods
+      .acceptWager()
+      .accounts({
+        counterparty: dc.publicKey,
+        proposal: proposalPda,
+        wager: wagerPda,
+        oracleFeed,
+        systemProgram: web3.SystemProgram.programId,
+      })
+      .rpc();
+
+    // Proposal should be closed
+    const proposalInfo = await connection.getAccountInfo(proposalPda);
+    assert.equal(proposalInfo, null, "proposal should be closed after acceptance");
+
+    // Wager should be active
+    const wager = await dprog.account.wager.fetch(wagerPda);
+    assert.deepStrictEqual(wager.state, { active: {} });
+    assert.equal(wager.proposer.toBase58(), dp.publicKey.toBase58());
+    assert.equal(wager.counterparty.toBase58(), dc.publicKey.toBase58());
+    const bal = await connection.getBalance(wagerPda);
+    assert(bal >= 600_000_000, `expected ≥ 0.6 SOL escrowed, got ${bal}`);
+    console.log(`     Wager PDA balance: ${(bal / 1e9).toFixed(4)} SOL`);
+  });
+
+  await test("cancel_proposal returns stake+rent to proposer", async () => {
+    // Create a new proposal to cancel
+    const cp = web3.Keypair.generate();
+    await airdrop(connection, cp.publicKey, 3_000_000_000);
+    const cprog = new anchor.Program(IDL, new anchor.AnchorProvider(connection, makeWallet(cp), {}));
+    const [cProposalPda] = web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("proposal"), cp.publicKey.toBuffer()], PROGRAM_ID
+    );
+    const slotC = await connection.getSlot("confirmed");
+    await cprog.methods.proposeWager({
+      condition: { priceBelow: {} },
+      threshold: new BN("999999999999"), thresholdMin: new BN(0), thresholdMax: new BN(0),
+      changePct: 0, snapshotPrice: new BN(0),
+      expirySlot: new BN(slotC + 100),
+      proposerStake: new BN(200_000_000), counterpartyStake: new BN(200_000_000),
+    }).accounts({ proposer: cp.publicKey, proposal: cProposalPda, oracleFeed: CHAINLINK_FEED, systemProgram: web3.SystemProgram.programId }).rpc();
+
+    const balBefore = await connection.getBalance(cp.publicKey);
+    await cprog.methods.cancelProposal()
+      .accounts({ proposer: cp.publicKey, proposal: cProposalPda, systemProgram: web3.SystemProgram.programId })
+      .rpc();
+
+    const pdaAfter = await connection.getAccountInfo(cProposalPda);
+    assert.equal(pdaAfter, null, "proposal should be closed after cancel");
+    const balAfter = await connection.getBalance(cp.publicKey);
+    console.log(`     Returned: ${((balAfter - balBefore) / 1e9).toFixed(4)} SOL`);
+    assert(balAfter > balBefore, "proposer should have received lamports back");
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────
   // Summary
   // ────────────────────────────────────────────────────────────────────────────
   console.log(`\n${"─".repeat(50)}`);

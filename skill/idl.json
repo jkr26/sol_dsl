@@ -32,6 +32,78 @@
       ]
     },
     {
+      "name": "propose_wager",
+      "discriminator": [83, 236, 237, 63, 94, 112, 79, 23],
+      "accounts": [
+        { "name": "proposer", "writable": true, "signer": true },
+        {
+          "name": "proposal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [112, 114, 111, 112, 111, 115, 97, 108] },
+              { "kind": "account", "path": "proposer" }
+            ]
+          }
+        },
+        { "name": "oracle_feed" },
+        { "name": "system_program", "address": "11111111111111111111111111111111" }
+      ],
+      "args": [
+        { "name": "params", "type": { "defined": { "name": "WagerParams" } } }
+      ]
+    },
+    {
+      "name": "accept_wager",
+      "discriminator": [214, 18, 178, 214, 203, 22, 50, 119],
+      "accounts": [
+        { "name": "counterparty", "writable": true, "signer": true },
+        {
+          "name": "proposal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [112, 114, 111, 112, 111, 115, 97, 108] },
+              { "kind": "account", "path": "proposal.proposer" }
+            ]
+          }
+        },
+        {
+          "name": "wager",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [119, 97, 103, 101, 114] },
+              { "kind": "account", "path": "proposal.proposer" },
+              { "kind": "account", "path": "counterparty" }
+            ]
+          }
+        },
+        { "name": "oracle_feed" },
+        { "name": "system_program", "address": "11111111111111111111111111111111" }
+      ],
+      "args": []
+    },
+    {
+      "name": "cancel_proposal",
+      "discriminator": [106, 74, 128, 146, 19, 65, 39, 23],
+      "accounts": [
+        { "name": "proposer", "writable": true, "signer": true },
+        {
+          "name": "proposal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [112, 114, 111, 112, 111, 115, 97, 108] },
+              { "kind": "account", "path": "proposer" }
+            ]
+          }
+        },
+        { "name": "system_program", "address": "11111111111111111111111111111111" }
+      ],
+      "args": []
+    },
+    {
       "name": "settle_wager",
       "discriminator": [161, 242, 169, 152, 172, 163, 161, 104],
       "accounts": [
@@ -60,9 +132,21 @@
     {
       "name": "Wager",
       "discriminator": [3, 110, 53, 190, 113, 31, 230, 40]
+    },
+    {
+      "name": "WagerProposal",
+      "discriminator": [159, 174, 94, 81, 203, 160, 196, 53]
     }
   ],
   "events": [
+    {
+      "name": "ProposalCreated",
+      "discriminator": [186, 8, 160, 108, 81, 13, 51, 206]
+    },
+    {
+      "name": "ProposalCancelled",
+      "discriminator": [253, 59, 104, 46, 129, 78, 9, 14]
+    },
     {
       "name": "WagerInitialised",
       "discriminator": [62, 254, 124, 61, 87, 200, 234, 123]
@@ -84,7 +168,8 @@
     { "code": 6008, "name": "InvalidExpiry", "msg": "Expiry slot must be non-zero" },
     { "code": 6009, "name": "InvalidBand", "msg": "PRICE_BETWEEN band is invalid: min must be less than max" },
     { "code": 6010, "name": "InvalidSnapshot", "msg": "Snapshot price must be non-zero for PRICE_CHANGE_PCT" },
-    { "code": 6011, "name": "MathOverflow", "msg": "Arithmetic overflow" }
+    { "code": 6011, "name": "MathOverflow", "msg": "Arithmetic overflow" },
+    { "code": 6012, "name": "ProposalExpired", "msg": "Proposal has already expired" }
   ],
   "types": [
     {
@@ -105,6 +190,26 @@
           { "name": "proposer_stake", "type": "u64" },
           { "name": "counterparty_stake", "type": "u64" },
           { "name": "state", "type": { "defined": { "name": "WagerState" } } },
+          { "name": "bump", "type": "u8" }
+        ]
+      }
+    },
+    {
+      "name": "WagerProposal",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "proposer", "type": "pubkey" },
+          { "name": "oracle_feed", "type": "pubkey" },
+          { "name": "condition", "type": { "defined": { "name": "WagerCondition" } } },
+          { "name": "threshold", "type": "i128" },
+          { "name": "threshold_min", "type": "i128" },
+          { "name": "threshold_max", "type": "i128" },
+          { "name": "change_pct", "type": "i32" },
+          { "name": "snapshot_price", "type": "i128" },
+          { "name": "expiry_slot", "type": "u64" },
+          { "name": "proposer_stake", "type": "u64" },
+          { "name": "counterparty_stake", "type": "u64" },
           { "name": "bump", "type": "u8" }
         ]
       }
@@ -145,6 +250,27 @@
         "variants": [
           { "name": "Active" },
           { "name": "Settled" }
+        ]
+      }
+    },
+    {
+      "name": "ProposalCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "proposal", "type": "pubkey" },
+          { "name": "proposer", "type": "pubkey" },
+          { "name": "expiry_slot", "type": "u64" }
+        ]
+      }
+    },
+    {
+      "name": "ProposalCancelled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "proposal", "type": "pubkey" },
+          { "name": "proposer", "type": "pubkey" }
         ]
       }
     },
