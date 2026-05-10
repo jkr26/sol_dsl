@@ -104,6 +104,26 @@
       "args": []
     },
     {
+      "name": "register_protocol",
+      "discriminator": [63, 107, 156, 136, 249, 231, 183, 65],
+      "accounts": [
+        { "name": "payer", "writable": true, "signer": true },
+        {
+          "name": "meta",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [109, 101, 116, 97] }
+            ]
+          }
+        },
+        { "name": "system_program", "address": "11111111111111111111111111111111" }
+      ],
+      "args": [
+        { "name": "uri", "type": "string" }
+      ]
+    },
+    {
       "name": "settle_wager",
       "discriminator": [161, 242, 169, 152, 172, 163, 161, 104],
       "accounts": [
@@ -136,6 +156,10 @@
     {
       "name": "WagerProposal",
       "discriminator": [159, 174, 94, 81, 203, 160, 196, 53]
+    },
+    {
+      "name": "ProtocolMeta",
+      "discriminator": [82, 127, 47, 156, 193, 110, 213, 233]
     }
   ],
   "events": [
@@ -169,7 +193,8 @@
     { "code": 6009, "name": "InvalidBand", "msg": "PRICE_BETWEEN band is invalid: min must be less than max" },
     { "code": 6010, "name": "InvalidSnapshot", "msg": "Snapshot price must be non-zero for PRICE_CHANGE_PCT" },
     { "code": 6011, "name": "MathOverflow", "msg": "Arithmetic overflow" },
-    { "code": 6012, "name": "ProposalExpired", "msg": "Proposal has already expired" }
+    { "code": 6012, "name": "ProposalExpired", "msg": "Proposal has already expired" },
+    { "code": 6013, "name": "UriTooLong", "msg": "Capabilities URI exceeds 200-byte limit" }
   ],
   "types": [
     {
@@ -190,6 +215,16 @@
           { "name": "proposer_stake", "type": "u64" },
           { "name": "counterparty_stake", "type": "u64" },
           { "name": "state", "type": { "defined": { "name": "WagerState" } } },
+          { "name": "bump", "type": "u8" }
+        ]
+      }
+    },
+    {
+      "name": "ProtocolMeta",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "uri", "type": "string" },
           { "name": "bump", "type": "u8" }
         ]
       }

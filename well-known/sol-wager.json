@@ -1,0 +1,122 @@
+{
+  "schema_version": "v1",
+  "id": "sol-wager",
+  "name_for_human": "Sol Wager",
+  "name_for_model": "sol_wager",
+  "description_for_human": "Peer-to-peer on-chain price wagers settled by Chainlink oracles on Solana",
+  "description_for_model": "Propose, accept, and settle peer-to-peer SOL wagers verified by Chainlink price feeds. Proposers escrow stake immediately in a public on-chain account any agent can discover and accept. Supports PRICE_ABOVE, PRICE_BELOW, PRICE_BETWEEN, and PRICE_CHANGE_PCT conditions. Settlement is permissionless — anyone can trigger it once the expiry slot passes.",
+
+  "network": "mainnet-beta",
+  "program_id": "GJYEW4jBbBZTVNTdG2AB3EHjC39hFuWWZjaxvDUpmZ3i",
+  "meta_pda": "DsHfsWqQrjzDCNieBKxrPF92bRMopSuCeGmVGXd5G8o6",
+
+  "openclaw": {
+    "package": "@openclaw/sol-wager",
+    "repository": "https://github.com/jkr26/sol_dsl",
+    "install": "npm install @openclaw/sol-wager"
+  },
+
+  "discovery": {
+    "protocol_meta_pda": {
+      "description": "On-chain account storing the canonical capabilities URI for this protocol",
+      "address": "DsHfsWqQrjzDCNieBKxrPF92bRMopSuCeGmVGXd5G8o6",
+      "seeds": ["meta"],
+      "program_id": "GJYEW4jBbBZTVNTdG2AB3EHjC39hFuWWZjaxvDUpmZ3i",
+      "account_discriminator": [82, 127, 47, 156, 193, 110, 213, 233],
+      "fields": {
+        "uri": "string — URL of the hosted .well-known/sol-wager.json",
+        "bump": "u8"
+      }
+    },
+    "open_proposals": {
+      "description": "Fetch all live WagerProposal accounts directly from the chain without any plugin installed",
+      "method": "getProgramAccounts",
+      "program_id": "GJYEW4jBbBZTVNTdG2AB3EHjC39hFuWWZjaxvDUpmZ3i",
+      "account_discriminator": [159, 174, 94, 81, 203, 160, 196, 53],
+      "filter_active": "expiry_slot (u64 LE at offset 141) > current slot",
+      "schema": {
+        "discriminator": "8 bytes (offset 0)",
+        "proposer":          "pubkey, offset  8, 32 bytes",
+        "oracle_feed":       "pubkey, offset 40, 32 bytes",
+        "condition":         "u8 enum, offset 72 — 0=PriceBelow 1=PriceAbove 2=PriceBetween 3=PriceChangePct",
+        "threshold":         "i128 LE, offset 73, 16 bytes",
+        "threshold_min":     "i128 LE, offset 89, 16 bytes",
+        "threshold_max":     "i128 LE, offset 105, 16 bytes",
+        "change_pct":        "i32 LE,  offset 121, 4 bytes (basis points; 100 = 1%)",
+        "snapshot_price":    "i128 LE, offset 125, 16 bytes",
+        "expiry_slot":       "u64 LE,  offset 141, 8 bytes",
+        "proposer_stake":    "u64 LE,  offset 149, 8 bytes (lamports)",
+        "counterparty_stake":"u64 LE,  offset 157, 8 bytes (lamports)",
+        "bump":              "u8,      offset 165"
+      }
+    }
+  },
+
+  "tools": [
+    { "name": "wager_propose_open",    "description": "Post a public open proposal with stake escrowed (single sig)" },
+    { "name": "wager_accept_proposal", "description": "Accept an open proposal by on-chain address" },
+    { "name": "wager_cancel_proposal", "description": "Cancel your own unaccepted proposal and reclaim stake" },
+    { "name": "wager_list_open",       "description": "List all live open proposals on-chain" },
+    { "name": "wager_propose",         "description": "Create bilateral (two-sig) wager with durable nonce tx" },
+    { "name": "wager_inspect",         "description": "Verify a received tx_hex matches its accompanying DSL" },
+    { "name": "wager_accept",          "description": "Countersign and submit a bilateral wager" },
+    { "name": "wager_settle",          "description": "Settle an expired wager — permissionless" },
+    { "name": "wager_watch",           "description": "Register a wager for automatic settlement tracking" },
+    { "name": "wager_check_pending",   "description": "Settle all expired watched wagers in the local store" },
+    { "name": "wager_capabilities",    "description": "Full capabilities document plus live open proposals" }
+  ],
+
+  "conditions": {
+    "PRICE_ABOVE": {
+      "description": "Proposer wins if oracle price > threshold at expiry. Counterparty wins if price ≤ threshold.",
+      "required_fields": ["threshold"]
+    },
+    "PRICE_BELOW": {
+      "description": "Proposer wins if oracle price < threshold at expiry. Counterparty wins if price ≥ threshold.",
+      "required_fields": ["threshold"]
+    },
+    "PRICE_BETWEEN": {
+      "description": "Proposer wins if threshold_min ≤ oracle price ≤ threshold_max. Counterparty wins if outside band.",
+      "required_fields": ["threshold_min", "threshold_max"]
+    },
+    "PRICE_CHANGE_PCT": {
+      "description": "Proposer wins if % change from snapshot_price ≥ change_pct at expiry.",
+      "required_fields": ["change_pct", "snapshot_price"],
+      "note": "change_pct is in basis points: 100 = 1%, 500 = 5%. Negative = proposer bets price falls."
+    }
+  },
+
+  "oracle": {
+    "provider": "Chainlink",
+    "program_id": "HEvSKofvBgfaexv23kMabbYqxasxU3mQ4ibBMEmJWHny",
+    "price_decimals": 8,
+    "note": "All threshold values are raw Chainlink units. $1.00 = 100000000. $100.00 = 10000000000.",
+    "staleness_limit_slots": 150,
+    "known_feeds": [
+      { "pair": "SOL/USD", "address": "HgTtcbcmp5BeThax5AU8vg4VwK79qAvAKKFMs8txMLW6", "network": "devnet" },
+      { "pair": "BTC/USD", "address": "CzZQBrJCLqjXRfMjRN3fhbxur2QYHUzkpaRwkWsiPqbJ", "network": "mainnet-beta" },
+      { "pair": "ETH/USD", "address": "2ypeVyYnZaW2TNYXXTaZq9YhYvnqcjCiifW1C6n8b62P", "network": "mainnet-beta" }
+    ]
+  },
+
+  "stakes": {
+    "unit": "lamports",
+    "min": 1,
+    "note": "1 SOL = 1000000000 lamports. Both proposer_stake and counterparty_stake must be ≥ 1."
+  },
+
+  "settlement": {
+    "who_can_settle": "Anyone — permissionless",
+    "when": "After expiry_slot has passed",
+    "how": "Call settle_wager with proposer, counterparty, winner guess, and oracle feed. Program verifies against oracle and reverts if wrong winner is given.",
+    "outcome": "All escrowed lamports (both stakes + rent from both accounts) go to the winner."
+  },
+
+  "risks": [
+    "Stake is locked until expiry — no withdrawal once counterparty has accepted",
+    "Cannot cancel after counterparty accepts",
+    "Settlement reverts if the Chainlink oracle is stale by more than 150 slots",
+    "expiry_slot is a Solana slot number, not a wall-clock time (~0.4s per slot on mainnet)",
+    "Proposer's stake enters the prize pot even if the proposal expires without acceptance"
+  ]
+}

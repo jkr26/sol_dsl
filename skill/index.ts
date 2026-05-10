@@ -2,6 +2,7 @@ import * as path from "path";
 import * as os from "os";
 import { registerWagerTools } from "./src/tools";
 import { resolveStorePath } from "./src/watcher";
+import { FileAuditBackend, wrapWithAudit } from "./src/audit";
 
 const DEFAULT_WALLET = path.join(os.homedir(), ".config", "solana", "id.json");
 const DEFAULT_RPC = "https://api.mainnet-beta.solana.com";
@@ -28,9 +29,15 @@ export function activate(openclaw: any): void {
     idl: IDL,
   };
 
+  const auditPath = resolveStorePath(
+    pluginCfg.auditPath ?? process.env.SOL_WAGER_AUDIT_PATH ??
+    path.join(os.homedir(), ".openclaw", "sol-wager", "audit.jsonl")
+  );
+  const audit = new FileAuditBackend(auditPath);
+
   const tools = registerWagerTools(cfg);
   for (const [name, tool] of Object.entries(tools)) {
-    openclaw.registerTool(name, tool);
+    openclaw.registerTool(name, wrapWithAudit(name, tool as any, audit));
   }
 }
 

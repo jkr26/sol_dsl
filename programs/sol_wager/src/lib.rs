@@ -188,6 +188,16 @@ pub mod sol_wager {
         // Anchor's `close = proposer` returns all lamports (stake + rent)
     }
 
+    /// Stores the canonical capabilities URI for this protocol in a well-known PDA.
+    /// Call once after deployment so agents can discover the .well-known manifest
+    /// by deriving seeds = ["meta"] from the program ID.
+    pub fn register_protocol(ctx: Context<RegisterProtocol>, uri: String) -> Result<()> {
+        require!(uri.len() <= ProtocolMeta::MAX_URI_LEN, WagerError::UriTooLong);
+        ctx.accounts.meta.uri = uri;
+        ctx.accounts.meta.bump = ctx.bumps.meta;
+        Ok(())
+    }
+
     /// Settles an expired wager by reading the Chainlink feed and sending all
     /// escrowed lamports (including rent) to the winner.
     /// Permissionless — either party may call once `expiry_slot` has passed.
@@ -376,6 +386,23 @@ pub struct CancelProposal<'info> {
     pub system_program: Program<'info, System>,
 }
 
+#[derive(Accounts)]
+pub struct RegisterProtocol<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    #[account(
+        init,
+        payer = payer,
+        space = ProtocolMeta::SPACE,
+        seeds = [b"meta"],
+        bump
+    )]
+    pub meta: Account<'info, ProtocolMeta>,
+
+    pub system_program: Program<'info, System>,
+}
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -401,6 +428,19 @@ pub struct Wager {
 impl Wager {
     // 8 discriminator + field sizes above
     pub const SPACE: usize = 8 + 32 + 32 + 32 + 1 + 16 + 16 + 16 + 4 + 16 + 8 + 8 + 8 + 1 + 1;
+}
+
+/// Stores the canonical capabilities URI so agents can discover this protocol
+/// by deriving PDA seeds = ["meta"] from the program ID.
+#[account]
+pub struct ProtocolMeta {
+    pub uri: String,
+    pub bump: u8,
+}
+
+impl ProtocolMeta {
+    pub const MAX_URI_LEN: usize = 200;
+    pub const SPACE: usize = 8 + 4 + Self::MAX_URI_LEN + 1;
 }
 
 /// An open, single-signature wager proposal.  Any agent can accept it.
@@ -542,6 +582,8 @@ pub enum WagerError {
     MathOverflow,
     #[msg("Proposal has already expired")]
     ProposalExpired,
+    #[msg("Capabilities URI exceeds 200-byte limit")]
+    UriTooLong,
 }
 
 // ---------------------------------------------------------------------------

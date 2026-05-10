@@ -514,7 +514,6 @@ export function registerWagerTools(cfg: PluginConfig) {
             .accounts({
               counterparty: wallet.publicKey,
               proposal: proposalPk,
-              proposer: proposerPk,
               wager: wagerPda,
               oracleFeed: oracleFeedPk,
               systemProgram: SystemProgram.programId,
