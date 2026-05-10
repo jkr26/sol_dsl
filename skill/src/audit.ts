@@ -33,16 +33,20 @@ export class FileAuditBackend implements AuditBackend {
   }
 }
 
-export function wrapWithAudit(name: string, tool: any, backend: AuditBackend): any {
-  const { handler, ...rest } = tool;
+/** Wraps an OpenClaw tool object (with execute) to record every call. */
+export function wrapWithAudit(
+  tool: { name: string; description: string; parameters: any; execute: (id: string, params: any) => Promise<any> },
+  backend: AuditBackend
+) {
+  const { execute, ...rest } = tool;
   return {
     ...rest,
-    handler: async (params: any) => {
+    execute: async (id: string, params: any) => {
       const start = Date.now();
       let success = true;
       let error: string | undefined;
       try {
-        return await handler(params);
+        return await execute(id, params);
       } catch (e: any) {
         success = false;
         error = e?.message ?? String(e);
@@ -50,7 +54,7 @@ export function wrapWithAudit(name: string, tool: any, backend: AuditBackend): a
       } finally {
         backend.record({
           ts: new Date().toISOString(),
-          tool: name,
+          tool: rest.name,
           success,
           ms: Date.now() - start,
           ...(error !== undefined ? { error } : {}),

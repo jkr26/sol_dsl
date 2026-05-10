@@ -3,26 +3,65 @@
   "name": "Sol Wager",
   "version": "0.1.0",
   "description": "Claw-DSL wager protocol — peer-to-peer SOL wagers verified by Chainlink price feeds",
+
+  "contracts": {
+    "tools": [
+      "wager_propose",
+      "wager_inspect",
+      "wager_accept",
+      "wager_settle",
+      "wager_watch",
+      "wager_check_pending",
+      "wager_propose_open",
+      "wager_accept_proposal",
+      "wager_cancel_proposal",
+      "wager_list_open",
+      "wager_capabilities"
+    ]
+  },
+
+  "toolMetadata": {
+    "wager_propose":          { "optional": true },
+    "wager_inspect":          { "optional": true },
+    "wager_accept":           { "optional": true },
+    "wager_settle":           { "optional": true },
+    "wager_watch":            { "optional": true },
+    "wager_check_pending":    { "optional": true },
+    "wager_propose_open":     { "optional": true },
+    "wager_accept_proposal":  { "optional": true },
+    "wager_cancel_proposal":  { "optional": true },
+    "wager_list_open":        { "optional": true },
+    "wager_capabilities":     { "optional": true }
+  },
+
+  "activation": {
+    "onStartup": true
+  },
+
   "configSchema": {
-    "walletPath": {
-      "type": "string",
-      "description": "Path to this agent's Solana keypair JSON file",
-      "default": "~/.config/solana/id.json"
-    },
-    "rpcUrl": {
-      "type": "string",
-      "description": "Solana RPC endpoint",
-      "default": "https://api.devnet.solana.com"
-    },
-    "programId": {
-      "type": "string",
-      "description": "Deployed sol_wager program ID",
-      "default": "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
-    },
-    "storePath": {
-      "type": "string",
-      "description": "Path to the pending wager JSON store",
-      "default": "~/.openclaw/sol-wager/pending.json"
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "walletPath": {
+        "type": "string",
+        "description": "Path to this agent's Solana keypair JSON file",
+        "default": "~/.config/solana/id.json"
+      },
+      "rpcUrl": {
+        "type": "string",
+        "description": "Solana RPC endpoint",
+        "default": "https://api.mainnet-beta.solana.com"
+      },
+      "storePath": {
+        "type": "string",
+        "description": "Path to the pending wager JSON store",
+        "default": "~/.openclaw/sol-wager/pending.json"
+      },
+      "auditPath": {
+        "type": "string",
+        "description": "Path to the append-only audit log (JSONL)",
+        "default": "~/.openclaw/sol-wager/audit.jsonl"
+      }
     }
   }
 }

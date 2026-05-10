@@ -8,14 +8,32 @@ const DEFAULT_WALLET = path.join(os.homedir(), ".config", "solana", "id.json");
 const DEFAULT_RPC = "https://api.mainnet-beta.solana.com";
 const DEFAULT_STORE = path.join(os.homedir(), ".openclaw", "sol-wager", "pending.json");
 
-// Deployed once by the protocol authors. Agents never touch this.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const PROGRAM_ID = require("./program-id.json").programId as string;
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const IDL = require("./idl.json");
+const PROGRAM_ID: string = IDL.address;
 
-export function activate(openclaw: any): void {
-  const pluginCfg = (openclaw.config?.plugins?.["sol-wager"] ?? {}) as Record<string, string>;
+/**
+ * Converts our internal tool shape { description, parameters, handler }
+ * to the OpenClaw tool shape { name, description, parameters, execute }.
+ * Return values are wrapped in the MCP content envelope.
+ */
+function adaptTool(
+  name: string,
+  tool: { description: string; parameters: any; handler: (params: any) => Promise<any> }
+) {
+  return {
+    name,
+    description: tool.description,
+    parameters: tool.parameters,
+    execute: async (_id: string, params: any) => {
+      const result = await tool.handler(params);
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    },
+  };
+}
+
+export function register(api: any): void {
+  const pluginCfg = (api.config?.plugins?.["sol-wager"] ?? {}) as Record<string, string>;
 
   const cfg = {
     walletPath: resolveStorePath(
@@ -37,8 +55,7 @@ export function activate(openclaw: any): void {
 
   const tools = registerWagerTools(cfg);
   for (const [name, tool] of Object.entries(tools)) {
-    openclaw.registerTool(name, wrapWithAudit(name, tool as any, audit));
+    const adapted = adaptTool(name, tool as any);
+    api.registerTool(wrapWithAudit(adapted, audit), { optional: true });
   }
 }
-
-export function deactivate(_openclaw: any): void {}

@@ -16,9 +16,7 @@ import {
   PendingWager,
 } from "./watcher";
 
-// verify/index.js is plain JS — loaded via require
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { verifyWagerTransaction } = require("../../verify");
+import { verifyWagerTransaction } from "./verify";
 
 const CHAINLINK_PROGRAM_ID = new PublicKey(
   "HEvSKofvBgfaexv23kMabbYqxasxU3mQ4ibBMEmJWHny"
