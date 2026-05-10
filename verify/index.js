@@ -14,18 +14,18 @@
 const { Transaction, PublicKey } = require("@solana/web3.js");
 const { BorshCoder } = require("@coral-xyz/anchor");
 const crypto = require("crypto");
-const IDL = require("./idl.json");
+const IDL = require("../skill/idl.json");
 
 const PROGRAM_ID = new PublicKey(
-  process.env.SOL_WAGER_PROGRAM_ID ||
-    "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+  process.env.SOL_WAGER_PROGRAM_ID || IDL.address
 );
 
-const CONDITION_MAP = {
-  PRICE_BELOW: { priceBelow: {} },
-  PRICE_ABOVE: { priceAbove: {} },
-  PRICE_BETWEEN: { priceBetween: {} },
-  PRICE_CHANGE_PCT: { priceChangePct: {} },
+// Maps DSL condition string → Borsh PascalCase enum variant key
+const CONDITION_BORSH = {
+  PRICE_BELOW:      "PriceBelow",
+  PRICE_ABOVE:      "PriceAbove",
+  PRICE_BETWEEN:    "PriceBetween",
+  PRICE_CHANGE_PCT: "PriceChangePct",
 };
 
 /**
@@ -110,47 +110,43 @@ function verifyWagerTransaction(txHex, dsl) {
   const coder = new BorshCoder(IDL);
   let params;
   try {
-    params = coder.instruction.decode(ix.data).data;
+    // In anchor 0.30, decode returns { name, data: { params: WagerParams } }
+    params = coder.instruction.decode(ix.data).data.params;
   } catch (e) {
     errors.push(`Failed to decode instruction data: ${e.message}`);
     return { ok: errors.length === 0, errors };
   }
 
   // --- 5. Compare WagerParams against DSL ---
+  // BorshCoder returns PascalCase enum variants (e.g. "PriceAbove")
   const conditionKey = Object.keys(params.condition)[0];
-  const expectedConditionKey = Object.keys(CONDITION_MAP[dsl.condition])[0];
+  const expectedConditionKey = CONDITION_BORSH[dsl.condition];
   if (conditionKey !== expectedConditionKey) {
     errors.push(
       `condition mismatch: tx=${conditionKey} dsl=${expectedConditionKey}`
     );
   }
 
-  const i128Check = (field, txVal) => {
-    const dslVal = BigInt(dsl[field] ?? 0);
+  const bnCheck = (dslField, txVal) => {
+    const dslVal = BigInt(dsl[dslField] ?? 0);
     if (BigInt(txVal.toString()) !== dslVal) {
-      errors.push(`${field} mismatch: tx=${txVal} dsl=${dslVal}`);
+      errors.push(`${dslField} mismatch: tx=${txVal} dsl=${dslVal}`);
     }
   };
 
-  const u64Check = (field, txVal) => {
-    const dslVal = BigInt(dsl[field] ?? 0);
-    if (BigInt(txVal.toString()) !== dslVal) {
-      errors.push(`${field} mismatch: tx=${txVal} dsl=${dslVal}`);
-    }
-  };
+  // BorshCoder returns snake_case field names matching the IDL
+  bnCheck("threshold",      params.threshold);
+  bnCheck("threshold_min",  params.threshold_min);
+  bnCheck("threshold_max",  params.threshold_max);
+  bnCheck("snapshot_price", params.snapshot_price);
 
-  i128Check("threshold", params.threshold);
-  i128Check("threshold_min", params.thresholdMin);
-  i128Check("threshold_max", params.thresholdMax);
-  i128Check("snapshot_price", params.snapshotPrice);
-
-  if (params.changePct !== (dsl.change_pct ?? 0)) {
-    errors.push(`change_pct mismatch: tx=${params.changePct} dsl=${dsl.change_pct ?? 0}`);
+  if (params.change_pct !== (dsl.change_pct ?? 0)) {
+    errors.push(`change_pct mismatch: tx=${params.change_pct} dsl=${dsl.change_pct ?? 0}`);
   }
 
-  u64Check("expiry_slot", params.expirySlot);
-  u64Check("proposer_stake", params.proposerStake);
-  u64Check("counterparty_stake", params.counterpartyStake);
+  bnCheck("expiry_slot",        params.expiry_slot);
+  bnCheck("proposer_stake",     params.proposer_stake);
+  bnCheck("counterparty_stake", params.counterparty_stake);
 
   // --- 6. Verify durable nonce (optional) ---
   if (dsl.nonce_account) {
