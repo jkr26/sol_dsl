@@ -34,10 +34,4 @@ export function activate(openclaw: any): void {
   }
 }
 
-export function deactivate(_openclaw: any): void {
-  // No persistent resources to clean up
-}
-
-export function deactivate(_openclaw: any): void {
-  // No persistent resources to clean up
-}
+export function deactivate(_openclaw: any): void {}

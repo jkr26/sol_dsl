@@ -6,7 +6,8 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "postinstall": "rm -rf node_modules/rpc-websockets/node_modules/uuid && ln -sf ../../uuid node_modules/rpc-websockets/node_modules/uuid || true"
   },
   "openclaw": {
     "extensions": ["dist/index.js"]
@@ -20,6 +21,9 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "typescript": "^5.6.0"
+  },
+  "overrides": {
+    "uuid": "^9.0.0"
   },
   "license": "MIT"
 }

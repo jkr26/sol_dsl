@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use chainlink_solana as chainlink;
 
-declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
+declare_id!("GJYEW4jBbBZTVNTdG2AB3EHjC39hFuWWZjaxvDUpmZ3i");
 
 // Maximum age of a Chainlink round before it's considered stale (~1 min at 400ms/slot)
 const MAX_STALENESS_SLOTS: u64 = 150;
@@ -16,21 +16,25 @@ pub mod sol_wager {
     pub fn initialize_wager(ctx: Context<InitializeWager>, params: WagerParams) -> Result<()> {
         params.validate()?;
 
-        let wager = &mut ctx.accounts.wager;
-        wager.proposer = ctx.accounts.proposer.key();
-        wager.counterparty = ctx.accounts.counterparty.key();
-        wager.oracle_feed = ctx.accounts.chainlink_feed.key();
-        wager.condition = params.condition;
-        wager.threshold = params.threshold;
-        wager.threshold_min = params.threshold_min;
-        wager.threshold_max = params.threshold_max;
-        wager.change_pct = params.change_pct;
-        wager.snapshot_price = params.snapshot_price;
-        wager.expiry_slot = params.expiry_slot;
-        wager.proposer_stake = params.proposer_stake;
-        wager.counterparty_stake = params.counterparty_stake;
-        wager.state = WagerState::Active;
-        wager.bump = ctx.bumps.wager;
+        // Scope the mutable borrow so it ends before the CPI transfers below
+        let (proposer_key, counterparty_key, expiry_slot) = {
+            let wager = &mut ctx.accounts.wager;
+            wager.proposer = ctx.accounts.proposer.key();
+            wager.counterparty = ctx.accounts.counterparty.key();
+            wager.oracle_feed = ctx.accounts.chainlink_feed.key();
+            wager.condition = params.condition;
+            wager.threshold = params.threshold;
+            wager.threshold_min = params.threshold_min;
+            wager.threshold_max = params.threshold_max;
+            wager.change_pct = params.change_pct;
+            wager.snapshot_price = params.snapshot_price;
+            wager.expiry_slot = params.expiry_slot;
+            wager.proposer_stake = params.proposer_stake;
+            wager.counterparty_stake = params.counterparty_stake;
+            wager.state = WagerState::Active;
+            wager.bump = ctx.bumps.wager;
+            (wager.proposer, wager.counterparty, wager.expiry_slot)
+        };
 
         // Escrow proposer's stake into the wager PDA
         anchor_lang::system_program::transfer(
@@ -58,9 +62,9 @@ pub mod sol_wager {
 
         emit!(WagerInitialised {
             wager: ctx.accounts.wager.key(),
-            proposer: wager.proposer,
-            counterparty: wager.counterparty,
-            expiry_slot: wager.expiry_slot,
+            proposer: proposer_key,
+            counterparty: counterparty_key,
+            expiry_slot,
         });
 
         Ok(())

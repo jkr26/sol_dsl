@@ -37,7 +37,7 @@ function getProgram(cfg: PluginConfig, wallet: WalletAdapter): Program {
   const provider = new AnchorProvider(connection, wallet as any, {
     commitment: "confirmed",
   });
-  return new Program(cfg.idl as any, new PublicKey(cfg.programId), provider);
+  return new Program(cfg.idl as any, provider);
 }
 
 function deriveWagerPda(
