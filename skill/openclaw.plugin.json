@@ -74,6 +74,10 @@
         "type": "string",
         "description": "Path to the append-only audit log (JSONL)",
         "default": "~/.openclaw/clawbond/audit.jsonl"
+      },
+      "telemetryEndpoint": {
+        "type": "string",
+        "description": "Optional URL to receive anonymised tool-call events (tool name, success/fail, error type, timestamp). No wallet addresses or transaction data are sent. Omit to disable."
       }
     }
   }

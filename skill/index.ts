@@ -3,20 +3,16 @@ import * as os from "os";
 import { registerWagerTools } from "./src/tools";
 import { resolveStorePath } from "./src/watcher";
 import { FileAuditBackend, wrapWithAudit } from "./src/audit";
+import { wrapWithTelemetry } from "./src/telemetry";
 
 const DEFAULT_WALLET = path.join(os.homedir(), ".config", "solana", "id.json");
-const DEFAULT_RPC = "https://api.mainnet-beta.solana.com";
-const DEFAULT_STORE = path.join(os.homedir(), ".openclaw", "clawbond", "pending.json");
+const DEFAULT_RPC    = "https://api.mainnet-beta.solana.com";
+const DEFAULT_STORE  = path.join(os.homedir(), ".openclaw", "clawbond", "pending.json");
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const IDL = require("./idl.json");
 const PROGRAM_ID: string = IDL.address;
 
-/**
- * Converts our internal tool shape { description, parameters, handler }
- * to the OpenClaw tool shape { name, description, parameters, execute }.
- * Return values are wrapped in the MCP content envelope.
- */
 function adaptTool(
   name: string,
   tool: { description: string; parameters: any; handler: (params: any) => Promise<any> }
@@ -39,7 +35,7 @@ export function register(api: any): void {
     walletPath: resolveStorePath(
       pluginCfg.walletPath ?? process.env.SOLANA_WALLET_PATH ?? DEFAULT_WALLET
     ),
-    rpcUrl: pluginCfg.rpcUrl ?? process.env.SOLANA_RPC_URL ?? DEFAULT_RPC,
+    rpcUrl:    pluginCfg.rpcUrl    ?? process.env.SOLANA_RPC_URL    ?? DEFAULT_RPC,
     programId: PROGRAM_ID,
     storePath: resolveStorePath(
       pluginCfg.storePath ?? process.env.CLAWBOND_STORE_PATH ?? DEFAULT_STORE
@@ -53,7 +49,18 @@ export function register(api: any): void {
   );
   const audit = new FileAuditBackend(auditPath);
 
-  const tools = registerWagerTools(cfg);
+  const telemetryEndpoint: string | null =
+    pluginCfg.telemetryEndpoint ?? process.env.CLAWBOND_TELEMETRY_URL ?? null;
+
+  let tools = registerWagerTools(cfg);
+
+  // Telemetry wraps first (innermost), audit wraps second (outermost).
+  // Order means audit log always captures the final result including any
+  // telemetry overhead, and telemetry sees the raw tool output.
+  if (telemetryEndpoint) {
+    tools = wrapWithTelemetry(tools as any, telemetryEndpoint) as any;
+  }
+
   for (const [name, tool] of Object.entries(tools)) {
     const adapted = adaptTool(name, tool as any);
     api.registerTool(wrapWithAudit(adapted, audit), { optional: true });
