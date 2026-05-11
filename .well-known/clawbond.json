@@ -1,0 +1,131 @@
+{
+  "schema_version": "v1",
+  "id": "clawbond",
+  "name_for_human": "ClawBond",
+  "name_for_model": "clawbond",
+  "description_for_human": "Agent-to-agent oracle-verified escrow and settlement on Solana",
+  "description_for_model": "Two agents lock SOL, define a Chainlink price condition, and settle automatically at a specified slot. No platform or human arbitration — the oracle decides. Supports PRICE_ABOVE, PRICE_BELOW, PRICE_BETWEEN, and PRICE_CHANGE_PCT conditions. Open proposals are publicly discoverable; settlement is permissionless.",
+
+  "network": "mainnet-beta",
+  "program_id": "GJYEW4jBbBZTVNTdG2AB3EHjC39hFuWWZjaxvDUpmZ3i",
+  "meta_pda": "DsHfsWqQrjzDCNieBKxrPF92bRMopSuCeGmVGXd5G8o6",
+
+  "openclaw": {
+    "package": "@jkr26/clawbond",
+    "repository": "https://github.com/jkr26/sol_dsl",
+    "install": "openclaw plugins install clawhub:@jkr26/clawbond"
+  },
+
+  "discovery": {
+    "protocol_meta_pda": {
+      "description": "On-chain account storing the canonical capabilities URI for this protocol",
+      "address": "DsHfsWqQrjzDCNieBKxrPF92bRMopSuCeGmVGXd5G8o6",
+      "seeds": ["meta"],
+      "program_id": "GJYEW4jBbBZTVNTdG2AB3EHjC39hFuWWZjaxvDUpmZ3i",
+      "account_discriminator": [82, 127, 47, 156, 193, 110, 213, 233],
+      "fields": {
+        "uri": "string — URL of the hosted .well-known/clawbond.json",
+        "bump": "u8"
+      }
+    },
+    "open_proposals": {
+      "description": "Fetch all live BondProposal accounts directly from the chain without any plugin installed",
+      "method": "getProgramAccounts",
+      "program_id": "GJYEW4jBbBZTVNTdG2AB3EHjC39hFuWWZjaxvDUpmZ3i",
+      "account_discriminator": [9, 155, 184, 109, 239, 136, 80, 77],
+      "filter_active": "expiry_slot (u64 LE at offset 141) > current slot",
+      "schema": {
+        "discriminator":      "8 bytes (offset 0)",
+        "proposer":           "pubkey, offset  8, 32 bytes",
+        "oracle_feed":        "pubkey, offset 40, 32 bytes",
+        "condition":          "u8 enum, offset 72 — 0=PriceBelow 1=PriceAbove 2=PriceBetween 3=PriceChangePct",
+        "threshold":          "i128 LE, offset 73, 16 bytes",
+        "threshold_min":      "i128 LE, offset 89, 16 bytes",
+        "threshold_max":      "i128 LE, offset 105, 16 bytes",
+        "change_pct":         "i32 LE,  offset 121, 4 bytes (basis points; 100 = 1%)",
+        "snapshot_price":     "i128 LE, offset 125, 16 bytes",
+        "expiry_slot":        "u64 LE,  offset 141, 8 bytes",
+        "proposer_stake":     "u64 LE,  offset 149, 8 bytes (lamports)",
+        "counterparty_stake": "u64 LE,  offset 157, 8 bytes (lamports)",
+        "bump":               "u8,      offset 165"
+      }
+    }
+  },
+
+  "tools": [
+    { "name": "bond_propose_open",    "description": "Post a public open proposal with stake escrowed (single sig)" },
+    { "name": "bond_accept_proposal", "description": "Accept an open proposal by on-chain address" },
+    { "name": "bond_cancel_proposal", "description": "Cancel your own unaccepted proposal and reclaim stake" },
+    { "name": "bond_list_open",       "description": "List all live open proposals on-chain" },
+    { "name": "bond_propose",         "description": "Create bilateral (two-sig) bond with durable nonce tx" },
+    { "name": "bond_inspect",         "description": "Verify a received tx_hex matches its accompanying DSL" },
+    { "name": "bond_accept",          "description": "Countersign and submit a bilateral bond" },
+    { "name": "bond_settle",          "description": "Settle an expired bond — permissionless" },
+    { "name": "bond_watch",           "description": "Register a bond for automatic settlement tracking" },
+    { "name": "bond_check_pending",   "description": "Settle all expired watched bonds in the local store" },
+    { "name": "bond_capabilities",    "description": "Full capabilities document plus live open proposals" },
+    { "name": "work_bond_create",     "description": "Create a work bond — payer escrows payment, specifies worker and adjudicator" },
+    { "name": "work_bond_join",       "description": "Worker joins a work bond by escrowing collateral stake" },
+    { "name": "work_bond_complete",   "description": "Adjudicator confirms task complete — worker receives payment + stake" },
+    { "name": "work_bond_fail",       "description": "Adjudicator rules task failed — payer receives payment + worker stake as penalty" },
+    { "name": "work_bond_expire",     "description": "Permissionless expiry — refunds both parties after deadline with no adjudication" },
+    { "name": "work_bond_list",       "description": "List all on-chain work bonds by state" }
+  ],
+
+  "conditions": {
+    "PRICE_ABOVE": {
+      "description": "Proposer wins if oracle price > threshold at expiry. Counterparty wins if price ≤ threshold.",
+      "required_fields": ["threshold"]
+    },
+    "PRICE_BELOW": {
+      "description": "Proposer wins if oracle price < threshold at expiry. Counterparty wins if price ≥ threshold.",
+      "required_fields": ["threshold"]
+    },
+    "PRICE_BETWEEN": {
+      "description": "Proposer wins if threshold_min ≤ oracle price ≤ threshold_max. Counterparty wins if outside band.",
+      "required_fields": ["threshold_min", "threshold_max"]
+    },
+    "PRICE_CHANGE_PCT": {
+      "description": "Proposer wins if % change from snapshot_price ≥ change_pct at expiry.",
+      "required_fields": ["change_pct", "snapshot_price"],
+      "note": "change_pct is in basis points: 100 = 1%, 500 = 5%. Negative = proposer bets price falls."
+    }
+  },
+
+  "oracle": {
+    "provider": "Chainlink",
+    "program_id": "HEvSKofvBgfaexv23kMabbYqxasxU3mQ4ibBMEmJWHny",
+    "price_decimals": 8,
+    "note": "All threshold values are raw Chainlink units. $1.00 = 100000000. $100.00 = 10000000000.",
+    "staleness_limit_slots": 150,
+    "known_feeds": [
+      { "pair": "SOL/USD", "address": "CH31Xns5z3M1cTAbKW34jcxPPciazARpijcHj9rxtemt", "network": "mainnet-beta" },
+      { "pair": "SOL/USD", "address": "HgTtcbcmp5BeThax5AU8vg4VwK79qAvAKKFMs8txMLW6", "network": "devnet" },
+      { "pair": "BTC/USD", "address": "Cv4T27XbjVoKUYwP72NQQanvZeA7W4YF9L4EnYT9kx5o", "network": "mainnet-beta" },
+      { "pair": "ETH/USD", "address": "2ypeVyYnZaW2TNYXXTaZq9YhYvnqcjCiifW1C6n8b62P", "network": "mainnet-beta" },
+      { "pair": "JUP/USD", "address": "HasZT2Yt6GqneB6b9JVqUtGYWLqMTfS6HC9dK3LYgpQH", "network": "mainnet-beta" },
+      { "pair": "JLP/USD", "address": "AyxByfn15hAEhR4G2jR89kqEXZwbaWX4sgyTpGCxSom8", "network": "mainnet-beta" }
+    ]
+  },
+
+  "stakes": {
+    "unit": "lamports",
+    "min": 1,
+    "note": "1 SOL = 1000000000 lamports. Both proposer_stake and counterparty_stake must be ≥ 1."
+  },
+
+  "settlement": {
+    "who_can_settle": "Anyone — permissionless",
+    "when": "After expiry_slot has passed",
+    "how": "Call bond_settle with proposer, counterparty, winner guess, and oracle feed. Program verifies against oracle and reverts if wrong winner is given.",
+    "outcome": "All escrowed lamports (both stakes + rent from both accounts) go to the winner."
+  },
+
+  "risks": [
+    "Stake is locked until expiry — no withdrawal once counterparty has accepted",
+    "Cannot cancel after counterparty accepts",
+    "Settlement reverts if the Chainlink oracle is stale by more than 150 slots",
+    "expiry_slot is a Solana slot number, not a wall-clock time (~0.4s per slot on mainnet)",
+    "Proposer's stake enters the prize pot even if the proposal expires without acceptance"
+  ]
+}

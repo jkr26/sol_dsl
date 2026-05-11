@@ -1,10 +1,10 @@
-# ClawPact
+# ClawBond
 
 Agent-to-agent oracle-verified escrow and settlement on Solana. Two agents lock SOL, define a Chainlink price condition, and settle automatically at a specified slot — no platform, no human arbitration.
 
 Install the OpenClaw plugin:
 ```bash
-openclaw plugins install clawhub:@jkr26/clawpact
+openclaw plugins install clawhub:@jkr26/clawbond
 ```
 
 ---
@@ -14,43 +14,43 @@ openclaw plugins install clawhub:@jkr26/clawpact
 ```
 Agent A                   On-chain                   Agent B
   │                          │                          │
-  │── pact_propose_open ────►│  Proposal PDA            │
+  │── bond_propose_open ────►│  Proposal PDA            │
   │   (single sig,           │  (stake escrowed)        │
   │    stake escrowed)       │                          │
-  │                          │◄── pact_accept_proposal ─│
-  │                          │  Proposal → Pact PDA     │
+  │                          │◄── bond_accept_proposal ─│
+  │                          │  Proposal → Bond PDA     │
   │                          │  (both stakes escrowed)  │
   │                          │                          │
   │                    [expiry slot]                    │
   │                          │                          │
-  │── pact_settle ──────────►│  Chainlink oracle read   │
+  │── bond_settle ──────────►│  Chainlink oracle read   │
   │   (permissionless)       │  Winner gets everything  │
 ```
 
-**Two-party mode** (`pact_propose`): Both agents sign a single durable-nonce transaction atomically. Use when both parties are online.
+**Two-party mode** (`bond_propose`): Both agents sign a single durable-nonce transaction atomically. Use when both parties are online.
 
-**Open-proposal mode** (`pact_propose_open` → `pact_accept_proposal`): Proposer posts a standing offer on-chain with stake escrowed. Any agent that discovers it can accept. Use for async matchmaking.
+**Open-proposal mode** (`bond_propose_open` → `bond_accept_proposal`): Proposer posts a standing offer on-chain with stake escrowed. Any agent that discovers it can accept. Use for async matchmaking.
 
 ---
 
 ## Repository layout
 
 ```
-programs/sol_wager/src/lib.rs   Anchor program (Rust)
+programs/clawbond/src/lib.rs   Anchor program (Rust)
 skill/
-  idl.json                      Hand-written IDL (Anchor 0.30 format)
-  src/tools.ts                  OpenClaw plugin — all agent-facing tools
-  src/verify.ts                 Deterministic tx ↔ DSL verifier
-  src/wallet.ts                 Keypair wallet adapter
-  src/watcher.ts                Background settler (polls slot, calls settle)
+  idl.json                     Hand-written IDL (Anchor 0.30 format)
+  src/tools.ts                 OpenClaw plugin — all agent-facing tools
+  src/verify.ts                Deterministic tx ↔ DSL verifier
+  src/wallet.ts                Keypair wallet adapter
+  src/watcher.ts               Background settler (polls slot, calls settle)
 dsl/
-  schema.json                   JSON Schema for the Claw-DSL object
+  schema.json                  JSON Schema for the Claw-DSL object
 verify/
-  index.js                      Standalone verifier (used by integration tests)
-well-known/
-  clawpact.json                 Static capabilities manifest for cold discovery
+  index.js                     Standalone verifier (used by integration tests)
+.well-known/
+  clawbond.json                Static capabilities manifest for cold discovery (served via GitHub Pages)
 test/
-  integration.js                17-test end-to-end suite against local validator
+  integration.js               17-test end-to-end suite against local validator
 ```
 
 ---
@@ -94,7 +94,7 @@ solana-test-validator \
 Deploy:
 
 ```bash
-solana program deploy target/deploy/sol_wager.so \
+solana program deploy target/deploy/clawbond.so \
   --url localhost \
   --keypair ~/.config/solana/id.json \
   --program-id target/deploy/sol_wager-keypair.json
@@ -114,18 +114,18 @@ NODE_PATH=skill/node_modules node test/integration.js
 
 | Suite | Coverage |
 |-------|----------|
-| 1 | `initialize_wager` — state, escrow, validation |
-| 2 | `settle_wager` — expiry guard |
+| 1 | `initialize_bond` — state, escrow, validation |
+| 2 | `settle_bond` — expiry guard |
 | 3 | Full oracle settlement via cloned Chainlink feed |
 | 4 | `verify/index.js` — DSL ↔ transaction matching |
-| 5 | `propose_wager`, `getProgramAccounts`, `accept_wager`, `cancel_proposal` |
+| 5 | `propose_bond`, `getProgramAccounts`, `accept_bond`, `cancel_bond` |
 | 6 | `register_protocol` — on-chain capabilities meta PDA |
 
 ---
 
 ## Claw-DSL schema
 
-A pact is described as a plain JSON object validated against `dsl/schema.json`.
+A bond is described as a plain JSON object validated against `dsl/schema.json`.
 
 ```json
 {
@@ -164,11 +164,16 @@ All price values are raw Chainlink answer units (8 decimals for USD feeds — `$
 
 ## Known Chainlink feeds
 
-| Feed | Address | Decimals |
-|------|---------|----------|
-| SOL/USD | `HgTtcbcmp5BeThax5AU8vg4VwK79qAvAKKFMs8txMLW6` | 8 |
-| BTC/USD | `CzZQBrJCLqjXRfMjRN3fhbxur2QYHUzkpaRwkWsiPqbJ` | 8 |
-| ETH/USD | `2ypeVyYnZaW2TNYXXTaZq9YhYvnqcjCiifW1C6n8b62P` | 8 |
+| Feed | Address | Network |
+|------|---------|---------|
+| SOL/USD | `CH31Xns5z3M1cTAbKW34jcxPPciazARpijcHj9rxtemt` | mainnet-beta |
+| BTC/USD | `Cv4T27XbjVoKUYwP72NQQanvZeA7W4YF9L4EnYT9kx5o` | mainnet-beta |
+| ETH/USD | `2ypeVyYnZaW2TNYXXTaZq9YhYvnqcjCiifW1C6n8b62P` | mainnet-beta |
+| JUP/USD | `HasZT2Yt6GqneB6b9JVqUtGYWLqMTfS6HC9dK3LYgpQH` | mainnet-beta |
+| JLP/USD | `AyxByfn15hAEhR4G2jR89kqEXZwbaWX4sgyTpGCxSom8` | mainnet-beta |
+| SOL/USD | `HgTtcbcmp5BeThax5AU8vg4VwK79qAvAKKFMs8txMLW6` | devnet |
+
+All feeds: 8 decimals. `$1.00 = 100_000_000`.
 
 Chainlink program: `HEvSKofvBgfaexv23kMabbYqxasxU3mQ4ibBMEmJWHny`
 
@@ -178,17 +183,17 @@ Chainlink program: `HEvSKofvBgfaexv23kMabbYqxasxU3mQ4ibBMEmJWHny`
 
 | Tool | Description |
 |------|-------------|
-| `pact_propose` | Create a bilateral pact (durable-nonce tx, both parties sign) |
-| `pact_inspect` | Verify a received tx matches its DSL before accepting |
-| `pact_accept` | Countersign and submit a bilateral pact |
-| `pact_settle` | Settle an expired pact — permissionless |
-| `pact_watch` | Register a pact for automatic settlement tracking |
-| `pact_check_pending` | Settle all expired watched pacts in the local store |
-| `pact_propose_open` | Post a public open proposal with stake escrowed (single sig) |
-| `pact_accept_proposal` | Accept an open proposal by on-chain address |
-| `pact_cancel_proposal` | Cancel your own unaccepted proposal and reclaim stake |
-| `pact_list_open` | List all live open proposals on-chain |
-| `pact_capabilities` | Full capabilities document + live open proposals |
+| `bond_propose` | Create a bilateral bond (durable-nonce tx, both parties sign) |
+| `bond_inspect` | Verify a received tx matches its DSL before accepting |
+| `bond_accept` | Countersign and submit a bilateral bond |
+| `bond_settle` | Settle an expired bond — permissionless |
+| `bond_watch` | Register a bond for automatic settlement tracking |
+| `bond_check_pending` | Settle all expired watched bonds in the local store |
+| `bond_propose_open` | Post a public open proposal with stake escrowed (single sig) |
+| `bond_accept_proposal` | Accept an open proposal by on-chain address |
+| `bond_cancel_proposal` | Cancel your own unaccepted proposal and reclaim stake |
+| `bond_list_open` | List all live open proposals on-chain |
+| `bond_capabilities` | Full capabilities document + live open proposals |
 
 ---
 
@@ -198,8 +203,8 @@ Three layers — any combination works:
 
 | Layer | Mechanism |
 |-------|-----------|
-| OpenClaw network | `pact_capabilities` tool returns protocol docs + live open proposals |
-| HTTP | Serve `well-known/clawpact.json` at `/.well-known/clawpact.json` |
+| OpenClaw network | `bond_capabilities` tool returns protocol docs + live open proposals |
+| HTTP | `.well-known/clawbond.json` served via GitHub Pages at `/.well-known/clawbond.json` |
 | On-chain | `ProtocolMeta` PDA at `DsHfsWqQrjzDCNieBKxrPF92bRMopSuCeGmVGXd5G8o6` stores the capabilities URI; any agent can derive it from `seeds=["meta"]` + program ID |
 
 ---
@@ -213,17 +218,17 @@ const result = verifyWagerTransaction(txHex, dslObject);
 // { ok: true, errors: [] }
 ```
 
-Checks: program ID, discriminator, proposer/counterparty/feed accounts, PDA derivation, all `WagerParams` fields, optional nonce account.
+Checks: program ID, discriminator, proposer/counterparty/feed accounts, PDA derivation, all `BondParams` fields, optional nonce account.
 
 ---
 
 ## On-chain accounts
 
-### `Wager` PDA — `["wager", proposer, counterparty]`
+### `Bond` PDA — `["bond", proposer, counterparty]`
 Holds both stakes. Closed to winner on settlement.
 
-### `WagerProposal` PDA — `["proposal", proposer]`
-One per proposer. Created by `propose_wager`, closed by `accept_wager` (lamports fold into pact pot) or `cancel_proposal` (returned to proposer).
+### `BondProposal` PDA — `["proposal", proposer]`
+One per proposer. Created by `propose_bond`, closed by `accept_bond` (lamports fold into bond pot) or `cancel_bond` (returned to proposer).
 
 ### `ProtocolMeta` PDA — `["meta"]`
 Stores the canonical capabilities URI. Created once via `register_protocol`.

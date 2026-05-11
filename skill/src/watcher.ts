@@ -4,8 +4,8 @@ import * as os from "os";
 import { PublicKey } from "@solana/web3.js";
 import { Program } from "@coral-xyz/anchor";
 
-export interface PendingWager {
-  wager_pda: string;
+export interface PendingBond {
+  bond_pda: string;
   proposer: string;
   counterparty: string;
   oracle_feed: string;
@@ -25,29 +25,29 @@ function ensureDir(storePath: string): void {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
-export function loadPendingWagers(storePath: string): PendingWager[] {
+export function loadPendingBonds(storePath: string): PendingBond[] {
   ensureDir(storePath);
   if (!fs.existsSync(storePath)) return [];
   try {
-    return JSON.parse(fs.readFileSync(storePath, "utf8")) as PendingWager[];
+    return JSON.parse(fs.readFileSync(storePath, "utf8")) as PendingBond[];
   } catch {
     return [];
   }
 }
 
-export function savePendingWager(storePath: string, entry: PendingWager): void {
-  const wagers = loadPendingWagers(storePath).filter(
-    (w) => w.wager_pda !== entry.wager_pda
+export function savePendingBond(storePath: string, entry: PendingBond): void {
+  const bonds = loadPendingBonds(storePath).filter(
+    (b) => b.bond_pda !== entry.bond_pda
   );
-  wagers.push(entry);
-  fs.writeFileSync(storePath, JSON.stringify(wagers, null, 2));
+  bonds.push(entry);
+  fs.writeFileSync(storePath, JSON.stringify(bonds, null, 2));
 }
 
-export function removePendingWager(storePath: string, wagerPda: string): void {
-  const wagers = loadPendingWagers(storePath).filter(
-    (w) => w.wager_pda !== wagerPda
+export function removePendingBond(storePath: string, bondPda: string): void {
+  const bonds = loadPendingBonds(storePath).filter(
+    (b) => b.bond_pda !== bondPda
   );
-  fs.writeFileSync(storePath, JSON.stringify(wagers, null, 2));
+  fs.writeFileSync(storePath, JSON.stringify(bonds, null, 2));
 }
 
 // ---------------------------------------------------------------------------
@@ -55,7 +55,7 @@ export function removePendingWager(storePath: string, wagerPda: string): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Returns the estimated Date at which to run wager_check_pending.
+ * Returns the estimated Date at which to run bond_check_pending.
  * Adds a 60-second buffer so the oracle round is fresh on arrival.
  */
 export function estimateCheckAt(currentSlot: number, expirySlot: number): Date {
@@ -69,31 +69,31 @@ export function estimateCheckAt(currentSlot: number, expirySlot: number): Date {
 // ---------------------------------------------------------------------------
 
 /**
- * Determines the winner by simulating settle_wager with each candidate in turn.
+ * Determines the winner by simulating settle_bond with each candidate in turn.
  * The on-chain program reads the oracle and evaluates the condition — we don't
  * replicate that logic off-chain.
  *
  * Returns the base58 public key of the winner, or throws if neither simulation
- * succeeds (wager not yet expired, stale oracle, already settled, etc.).
+ * succeeds (bond not yet expired, stale oracle, already settled, etc.).
  */
 export async function resolveWinner(
   program: Program,
-  wager: PendingWager,
+  bond: PendingBond,
   chainlinkProgramId: PublicKey
 ): Promise<string> {
   const systemProgram = new PublicKey("11111111111111111111111111111111");
-  const candidates = [wager.proposer, wager.counterparty];
+  const candidates = [bond.proposer, bond.counterparty];
 
   for (const candidate of candidates) {
     try {
       await (program.methods as any)
-        .settleWager()
+        .settleBond()
         .accounts({
-          wager: new PublicKey(wager.wager_pda),
-          proposer: new PublicKey(wager.proposer),
-          counterparty: new PublicKey(wager.counterparty),
+          bond: new PublicKey(bond.bond_pda),
+          proposer: new PublicKey(bond.proposer),
+          counterparty: new PublicKey(bond.counterparty),
           winner: new PublicKey(candidate),
-          chainlinkFeed: new PublicKey(wager.oracle_feed),
+          chainlinkFeed: new PublicKey(bond.oracle_feed),
           chainlinkProgram: chainlinkProgramId,
           systemProgram,
         })
@@ -105,7 +105,7 @@ export async function resolveWinner(
       // WrongWinner means the other candidate wins — try the next one
       if (msg.includes("WrongWinner")) continue;
       // Any other error is a hard stop (NotExpiredYet, StaleOracle, etc.)
-      throw new Error(`settle_wager simulation failed: ${msg}`);
+      throw new Error(`settle_bond simulation failed: ${msg}`);
     }
   }
 

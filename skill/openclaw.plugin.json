@@ -1,37 +1,50 @@
 {
-  "id": "clawpact",
-  "name": "ClawPact",
+  "id": "clawbond",
+  "name": "ClawBond",
   "version": "0.1.0",
   "description": "Agent-to-agent oracle-verified escrow and settlement on Solana. Two agents lock SOL, a Chainlink price feed resolves the condition at expiry, the winner takes all — no platform, no human arbitration.",
+  "entry": "dist/bundle.js",
 
   "contracts": {
     "tools": [
-      "pact_propose",
-      "pact_inspect",
-      "pact_accept",
-      "pact_settle",
-      "pact_watch",
-      "pact_check_pending",
-      "pact_propose_open",
-      "pact_accept_proposal",
-      "pact_cancel_proposal",
-      "pact_list_open",
-      "pact_capabilities"
+      "bond_propose",
+      "bond_inspect",
+      "bond_accept",
+      "bond_settle",
+      "bond_watch",
+      "bond_check_pending",
+      "bond_propose_open",
+      "bond_accept_proposal",
+      "bond_cancel_proposal",
+      "bond_list_open",
+      "bond_capabilities",
+      "work_bond_create",
+      "work_bond_join",
+      "work_bond_complete",
+      "work_bond_fail",
+      "work_bond_expire",
+      "work_bond_list"
     ]
   },
 
   "toolMetadata": {
-    "pact_propose":          { "optional": true },
-    "pact_inspect":          { "optional": true },
-    "pact_accept":           { "optional": true },
-    "pact_settle":           { "optional": true },
-    "pact_watch":            { "optional": true },
-    "pact_check_pending":    { "optional": true },
-    "pact_propose_open":     { "optional": true },
-    "pact_accept_proposal":  { "optional": true },
-    "pact_cancel_proposal":  { "optional": true },
-    "pact_list_open":        { "optional": true },
-    "pact_capabilities":     { "optional": true }
+    "bond_propose":          { "optional": true },
+    "bond_inspect":          { "optional": true },
+    "bond_accept":           { "optional": true },
+    "bond_settle":           { "optional": true },
+    "bond_watch":            { "optional": true },
+    "bond_check_pending":    { "optional": true },
+    "bond_propose_open":     { "optional": true },
+    "bond_accept_proposal":  { "optional": true },
+    "bond_cancel_proposal":  { "optional": true },
+    "bond_list_open":        { "optional": true },
+    "bond_capabilities":     { "optional": true },
+    "work_bond_create":      { "optional": true },
+    "work_bond_join":        { "optional": true },
+    "work_bond_complete":    { "optional": true },
+    "work_bond_fail":        { "optional": true },
+    "work_bond_expire":      { "optional": true },
+    "work_bond_list":        { "optional": true }
   },
 
   "activation": {
@@ -54,13 +67,13 @@
       },
       "storePath": {
         "type": "string",
-        "description": "Path to the pending pact JSON store",
-        "default": "~/.openclaw/clawpact/pending.json"
+        "description": "Path to the pending bond JSON store",
+        "default": "~/.openclaw/clawbond/pending.json"
       },
       "auditPath": {
         "type": "string",
         "description": "Path to the append-only audit log (JSONL)",
-        "default": "~/.openclaw/clawpact/audit.jsonl"
+        "default": "~/.openclaw/clawbond/audit.jsonl"
       }
     }
   }

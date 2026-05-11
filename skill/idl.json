@@ -1,24 +1,24 @@
 {
   "address": "GJYEW4jBbBZTVNTdG2AB3EHjC39hFuWWZjaxvDUpmZ3i",
   "metadata": {
-    "name": "sol_wager",
+    "name": "clawbond",
     "version": "0.1.0",
     "spec": "0.1.0",
-    "description": "Solana Agent-Wager: on-chain wager program using Chainlink price feeds"
+    "description": "ClawBond: agent-to-agent oracle-verified escrow and settlement on Solana"
   },
   "instructions": [
     {
-      "name": "initialize_wager",
-      "discriminator": [107, 74, 43, 36, 7, 67, 110, 204],
+      "name": "initialize_bond",
+      "discriminator": [135, 182, 183, 104, 169, 38, 102, 147],
       "accounts": [
         { "name": "proposer", "writable": true, "signer": true },
         { "name": "counterparty", "writable": true, "signer": true },
         {
-          "name": "wager",
+          "name": "bond",
           "writable": true,
           "pda": {
             "seeds": [
-              { "kind": "const", "value": [119, 97, 103, 101, 114] },
+              { "kind": "const", "value": [98, 111, 110, 100] },
               { "kind": "account", "path": "proposer" },
               { "kind": "account", "path": "counterparty" }
             ]
@@ -28,12 +28,12 @@
         { "name": "system_program", "address": "11111111111111111111111111111111" }
       ],
       "args": [
-        { "name": "params", "type": { "defined": { "name": "WagerParams" } } }
+        { "name": "params", "type": { "defined": { "name": "BondParams" } } }
       ]
     },
     {
-      "name": "propose_wager",
-      "discriminator": [83, 236, 237, 63, 94, 112, 79, 23],
+      "name": "propose_bond",
+      "discriminator": [246, 205, 45, 186, 198, 213, 232, 137],
       "accounts": [
         { "name": "proposer", "writable": true, "signer": true },
         {
@@ -50,12 +50,12 @@
         { "name": "system_program", "address": "11111111111111111111111111111111" }
       ],
       "args": [
-        { "name": "params", "type": { "defined": { "name": "WagerParams" } } }
+        { "name": "params", "type": { "defined": { "name": "BondParams" } } }
       ]
     },
     {
-      "name": "accept_wager",
-      "discriminator": [214, 18, 178, 214, 203, 22, 50, 119],
+      "name": "accept_bond",
+      "discriminator": [186, 207, 47, 26, 92, 180, 213, 129],
       "accounts": [
         { "name": "counterparty", "writable": true, "signer": true },
         {
@@ -69,11 +69,11 @@
           }
         },
         {
-          "name": "wager",
+          "name": "bond",
           "writable": true,
           "pda": {
             "seeds": [
-              { "kind": "const", "value": [119, 97, 103, 101, 114] },
+              { "kind": "const", "value": [98, 111, 110, 100] },
               { "kind": "account", "path": "proposal.proposer" },
               { "kind": "account", "path": "counterparty" }
             ]
@@ -85,8 +85,8 @@
       "args": []
     },
     {
-      "name": "cancel_proposal",
-      "discriminator": [106, 74, 128, 146, 19, 65, 39, 23],
+      "name": "cancel_bond",
+      "discriminator": [81, 78, 26, 248, 139, 167, 249, 246],
       "accounts": [
         { "name": "proposer", "writable": true, "signer": true },
         {
@@ -99,6 +99,30 @@
             ]
           }
         },
+        { "name": "system_program", "address": "11111111111111111111111111111111" }
+      ],
+      "args": []
+    },
+    {
+      "name": "settle_bond",
+      "discriminator": [14, 23, 99, 177, 245, 142, 35, 45],
+      "accounts": [
+        {
+          "name": "bond",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [98, 111, 110, 100] },
+              { "kind": "account", "path": "bond.proposer" },
+              { "kind": "account", "path": "bond.counterparty" }
+            ]
+          }
+        },
+        { "name": "proposer", "writable": true },
+        { "name": "counterparty", "writable": true },
+        { "name": "winner", "writable": true },
+        { "name": "chainlink_feed" },
+        { "name": "chainlink_program" },
         { "name": "system_program", "address": "11111111111111111111111111111111" }
       ],
       "args": []
@@ -124,98 +148,183 @@
       ]
     },
     {
-      "name": "settle_wager",
-      "discriminator": [161, 242, 169, 152, 172, 163, 161, 104],
+      "name": "create_work_bond",
+      "discriminator": [239, 80, 58, 46, 107, 155, 65, 39],
       "accounts": [
+        { "name": "payer", "writable": true, "signer": true },
+        { "name": "worker" },
+        { "name": "adjudicator" },
         {
-          "name": "wager",
+          "name": "work_bond",
           "writable": true,
           "pda": {
             "seeds": [
-              { "kind": "const", "value": [119, 97, 103, 101, 114] },
-              { "kind": "account", "path": "wager.proposer" },
-              { "kind": "account", "path": "wager.counterparty" }
+              { "kind": "const", "value": [119, 111, 114, 107, 98, 111, 110, 100] },
+              { "kind": "account", "path": "payer" },
+              { "kind": "account", "path": "worker" }
             ]
           }
         },
-        { "name": "proposer", "writable": true },
-        { "name": "counterparty", "writable": true },
-        { "name": "winner", "writable": true },
-        { "name": "chainlink_feed" },
-        { "name": "chainlink_program" },
         { "name": "system_program", "address": "11111111111111111111111111111111" }
+      ],
+      "args": [
+        { "name": "params", "type": { "defined": { "name": "WorkBondParams" } } }
+      ]
+    },
+    {
+      "name": "join_work_bond",
+      "discriminator": [153, 111, 161, 118, 203, 206, 29, 218],
+      "accounts": [
+        { "name": "worker", "writable": true, "signer": true },
+        {
+          "name": "work_bond",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [119, 111, 114, 107, 98, 111, 110, 100] },
+              { "kind": "account", "path": "work_bond.payer" },
+              { "kind": "account", "path": "worker" }
+            ]
+          }
+        },
+        { "name": "system_program", "address": "11111111111111111111111111111111" }
+      ],
+      "args": []
+    },
+    {
+      "name": "complete_work_bond",
+      "discriminator": [219, 248, 218, 2, 158, 101, 136, 82],
+      "accounts": [
+        { "name": "adjudicator", "signer": true },
+        { "name": "worker", "writable": true },
+        {
+          "name": "work_bond",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [119, 111, 114, 107, 98, 111, 110, 100] },
+              { "kind": "account", "path": "work_bond.payer" },
+              { "kind": "account", "path": "work_bond.worker" }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "fail_work_bond",
+      "discriminator": [221, 189, 94, 129, 193, 109, 199, 212],
+      "accounts": [
+        { "name": "adjudicator", "signer": true },
+        { "name": "payer", "writable": true },
+        {
+          "name": "work_bond",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [119, 111, 114, 107, 98, 111, 110, 100] },
+              { "kind": "account", "path": "work_bond.payer" },
+              { "kind": "account", "path": "work_bond.worker" }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "expire_work_bond",
+      "discriminator": [91, 63, 179, 153, 125, 8, 75, 58],
+      "accounts": [
+        { "name": "payer", "writable": true },
+        { "name": "worker", "writable": true },
+        {
+          "name": "work_bond",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [119, 111, 114, 107, 98, 111, 110, 100] },
+              { "kind": "account", "path": "work_bond.payer" },
+              { "kind": "account", "path": "work_bond.worker" }
+            ]
+          }
+        }
       ],
       "args": []
     }
   ],
   "accounts": [
-    {
-      "name": "Wager",
-      "discriminator": [3, 110, 53, 190, 113, 31, 230, 40]
-    },
-    {
-      "name": "WagerProposal",
-      "discriminator": [159, 174, 94, 81, 203, 160, 196, 53]
-    },
-    {
-      "name": "ProtocolMeta",
-      "discriminator": [82, 127, 47, 156, 193, 110, 213, 233]
-    }
+    { "name": "Bond",         "discriminator": [224, 128, 48, 251, 182, 246, 111, 196] },
+    { "name": "BondProposal", "discriminator": [9, 155, 184, 109, 239, 136, 80, 77] },
+    { "name": "ProtocolMeta", "discriminator": [82, 127, 47, 156, 193, 110, 213, 233] },
+    { "name": "WorkBond",     "discriminator": [210, 210, 222, 171, 179, 60, 73, 78] }
   ],
   "events": [
-    {
-      "name": "ProposalCreated",
-      "discriminator": [186, 8, 160, 108, 81, 13, 51, 206]
-    },
-    {
-      "name": "ProposalCancelled",
-      "discriminator": [253, 59, 104, 46, 129, 78, 9, 14]
-    },
-    {
-      "name": "WagerInitialised",
-      "discriminator": [62, 254, 124, 61, 87, 200, 234, 123]
-    },
-    {
-      "name": "WagerSettled",
-      "discriminator": [180, 216, 101, 152, 154, 154, 136, 153]
-    }
+    { "name": "BondInitialised",  "discriminator": [84, 236, 134, 2, 5, 34, 101, 144] },
+    { "name": "BondProposed",     "discriminator": [217, 40, 27, 48, 241, 22, 214, 243] },
+    { "name": "BondCancelled",    "discriminator": [195, 196, 211, 215, 103, 161, 33, 101] },
+    { "name": "BondSettled",      "discriminator": [187, 150, 172, 212, 229, 119, 165, 123] },
+    { "name": "WorkBondCreated",  "discriminator": [201, 5, 149, 2, 81, 213, 65, 144] },
+    { "name": "WorkBondJoined",   "discriminator": [52, 231, 203, 86, 167, 47, 140, 209] },
+    { "name": "WorkBondCompleted","discriminator": [43, 198, 98, 150, 54, 11, 7, 125] },
+    { "name": "WorkBondFailed",   "discriminator": [17, 189, 79, 17, 156, 96, 226, 28] },
+    { "name": "WorkBondExpired",  "discriminator": [192, 30, 195, 134, 19, 184, 59, 243] }
   ],
   "errors": [
-    { "code": 6000, "name": "AlreadySettled", "msg": "Wager has already been settled" },
-    { "code": 6001, "name": "NotExpiredYet", "msg": "Expiry slot has not been reached yet" },
-    { "code": 6002, "name": "StaleOracle", "msg": "Oracle round data is stale" },
-    { "code": 6003, "name": "WrongWinner", "msg": "Winner account does not match oracle outcome" },
-    { "code": 6004, "name": "InvalidProposer", "msg": "Proposer account does not match wager" },
-    { "code": 6005, "name": "InvalidCounterparty", "msg": "Counterparty account does not match wager" },
-    { "code": 6006, "name": "InvalidFeed", "msg": "Oracle feed account does not match wager" },
-    { "code": 6007, "name": "ZeroStake", "msg": "Stake amount must be greater than zero" },
-    { "code": 6008, "name": "InvalidExpiry", "msg": "Expiry slot must be non-zero" },
-    { "code": 6009, "name": "InvalidBand", "msg": "PRICE_BETWEEN band is invalid: min must be less than max" },
-    { "code": 6010, "name": "InvalidSnapshot", "msg": "Snapshot price must be non-zero for PRICE_CHANGE_PCT" },
-    { "code": 6011, "name": "MathOverflow", "msg": "Arithmetic overflow" },
-    { "code": 6012, "name": "ProposalExpired", "msg": "Proposal has already expired" },
-    { "code": 6013, "name": "UriTooLong", "msg": "Capabilities URI exceeds 200-byte limit" }
+    { "code": 6000, "name": "AlreadySettled",          "msg": "Bond has already been settled" },
+    { "code": 6001, "name": "NotExpiredYet",            "msg": "Expiry slot has not been reached yet" },
+    { "code": 6002, "name": "StaleOracle",              "msg": "Oracle round data is stale" },
+    { "code": 6003, "name": "WrongWinner",              "msg": "Winner account does not match oracle outcome" },
+    { "code": 6004, "name": "InvalidProposer",          "msg": "Proposer account does not match bond" },
+    { "code": 6005, "name": "InvalidCounterparty",      "msg": "Counterparty account does not match bond" },
+    { "code": 6006, "name": "InvalidFeed",              "msg": "Oracle feed account does not match bond" },
+    { "code": 6007, "name": "ZeroStake",                "msg": "Stake amount must be greater than zero" },
+    { "code": 6008, "name": "InvalidExpiry",            "msg": "Expiry slot must be non-zero" },
+    { "code": 6009, "name": "InvalidBand",              "msg": "PRICE_BETWEEN band is invalid: min must be less than max" },
+    { "code": 6010, "name": "InvalidSnapshot",          "msg": "Snapshot price must be non-zero for PRICE_CHANGE_PCT" },
+    { "code": 6011, "name": "MathOverflow",             "msg": "Arithmetic overflow" },
+    { "code": 6012, "name": "ProposalExpired",          "msg": "Proposal has already expired" },
+    { "code": 6013, "name": "UriTooLong",               "msg": "Capabilities URI exceeds 200-byte limit" },
+    { "code": 6014, "name": "WorkBondNotPendingWorker", "msg": "Work bond is not in PendingWorker state" },
+    { "code": 6015, "name": "WorkBondNotActive",        "msg": "Work bond is not in Active state" },
+    { "code": 6016, "name": "InvalidAdjudicator",       "msg": "Adjudicator account does not match work bond" },
+    { "code": 6017, "name": "InvalidWorker",            "msg": "Worker account does not match work bond" }
   ],
   "types": [
     {
-      "name": "Wager",
+      "name": "Bond",
       "type": {
         "kind": "struct",
         "fields": [
-          { "name": "proposer", "type": "pubkey" },
-          { "name": "counterparty", "type": "pubkey" },
-          { "name": "oracle_feed", "type": "pubkey" },
-          { "name": "condition", "type": { "defined": { "name": "WagerCondition" } } },
-          { "name": "threshold", "type": "i128" },
-          { "name": "threshold_min", "type": "i128" },
-          { "name": "threshold_max", "type": "i128" },
-          { "name": "change_pct", "type": "i32" },
-          { "name": "snapshot_price", "type": "i128" },
-          { "name": "expiry_slot", "type": "u64" },
-          { "name": "proposer_stake", "type": "u64" },
-          { "name": "counterparty_stake", "type": "u64" },
-          { "name": "state", "type": { "defined": { "name": "WagerState" } } },
-          { "name": "bump", "type": "u8" }
+          { "name": "proposer",          "type": "pubkey" },
+          { "name": "counterparty",      "type": "pubkey" },
+          { "name": "oracle_feed",       "type": "pubkey" },
+          { "name": "condition",         "type": { "defined": { "name": "BondCondition" } } },
+          { "name": "threshold",         "type": "i128" },
+          { "name": "threshold_min",     "type": "i128" },
+          { "name": "threshold_max",     "type": "i128" },
+          { "name": "change_pct",        "type": "i32" },
+          { "name": "snapshot_price",    "type": "i128" },
+          { "name": "expiry_slot",       "type": "u64" },
+          { "name": "proposer_stake",    "type": "u64" },
+          { "name": "counterparty_stake","type": "u64" },
+          { "name": "state",             "type": { "defined": { "name": "BondState" } } },
+          { "name": "bump",              "type": "u8" }
+        ]
+      }
+    },
+    {
+      "name": "WorkBond",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "payer",        "type": "pubkey" },
+          { "name": "worker",       "type": "pubkey" },
+          { "name": "adjudicator",  "type": "pubkey" },
+          { "name": "payment",      "type": "u64" },
+          { "name": "worker_stake", "type": "u64" },
+          { "name": "expiry_slot",  "type": "u64" },
+          { "name": "state",        "type": { "defined": { "name": "WorkBondState" } } },
+          { "name": "bump",         "type": "u8" }
         ]
       }
     },
@@ -224,50 +333,61 @@
       "type": {
         "kind": "struct",
         "fields": [
-          { "name": "uri", "type": "string" },
+          { "name": "uri",  "type": "string" },
           { "name": "bump", "type": "u8" }
         ]
       }
     },
     {
-      "name": "WagerProposal",
+      "name": "BondProposal",
       "type": {
         "kind": "struct",
         "fields": [
-          { "name": "proposer", "type": "pubkey" },
-          { "name": "oracle_feed", "type": "pubkey" },
-          { "name": "condition", "type": { "defined": { "name": "WagerCondition" } } },
-          { "name": "threshold", "type": "i128" },
-          { "name": "threshold_min", "type": "i128" },
-          { "name": "threshold_max", "type": "i128" },
-          { "name": "change_pct", "type": "i32" },
-          { "name": "snapshot_price", "type": "i128" },
-          { "name": "expiry_slot", "type": "u64" },
-          { "name": "proposer_stake", "type": "u64" },
-          { "name": "counterparty_stake", "type": "u64" },
-          { "name": "bump", "type": "u8" }
+          { "name": "proposer",          "type": "pubkey" },
+          { "name": "oracle_feed",       "type": "pubkey" },
+          { "name": "condition",         "type": { "defined": { "name": "BondCondition" } } },
+          { "name": "threshold",         "type": "i128" },
+          { "name": "threshold_min",     "type": "i128" },
+          { "name": "threshold_max",     "type": "i128" },
+          { "name": "change_pct",        "type": "i32" },
+          { "name": "snapshot_price",    "type": "i128" },
+          { "name": "expiry_slot",       "type": "u64" },
+          { "name": "proposer_stake",    "type": "u64" },
+          { "name": "counterparty_stake","type": "u64" },
+          { "name": "bump",              "type": "u8" }
         ]
       }
     },
     {
-      "name": "WagerParams",
+      "name": "BondParams",
       "type": {
         "kind": "struct",
         "fields": [
-          { "name": "condition", "type": { "defined": { "name": "WagerCondition" } } },
-          { "name": "threshold", "type": "i128" },
-          { "name": "threshold_min", "type": "i128" },
-          { "name": "threshold_max", "type": "i128" },
-          { "name": "change_pct", "type": "i32" },
-          { "name": "snapshot_price", "type": "i128" },
-          { "name": "expiry_slot", "type": "u64" },
-          { "name": "proposer_stake", "type": "u64" },
-          { "name": "counterparty_stake", "type": "u64" }
+          { "name": "condition",         "type": { "defined": { "name": "BondCondition" } } },
+          { "name": "threshold",         "type": "i128" },
+          { "name": "threshold_min",     "type": "i128" },
+          { "name": "threshold_max",     "type": "i128" },
+          { "name": "change_pct",        "type": "i32" },
+          { "name": "snapshot_price",    "type": "i128" },
+          { "name": "expiry_slot",       "type": "u64" },
+          { "name": "proposer_stake",    "type": "u64" },
+          { "name": "counterparty_stake","type": "u64" }
         ]
       }
     },
     {
-      "name": "WagerCondition",
+      "name": "WorkBondParams",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "payment",      "type": "u64" },
+          { "name": "worker_stake", "type": "u64" },
+          { "name": "expiry_slot",  "type": "u64" }
+        ]
+      }
+    },
+    {
+      "name": "BondCondition",
       "type": {
         "kind": "enum",
         "variants": [
@@ -279,7 +399,7 @@
       }
     },
     {
-      "name": "WagerState",
+      "name": "BondState",
       "type": {
         "kind": "enum",
         "variants": [
@@ -289,50 +409,95 @@
       }
     },
     {
-      "name": "ProposalCreated",
+      "name": "WorkBondState",
       "type": {
-        "kind": "struct",
-        "fields": [
-          { "name": "proposal", "type": "pubkey" },
-          { "name": "proposer", "type": "pubkey" },
-          { "name": "expiry_slot", "type": "u64" }
+        "kind": "enum",
+        "variants": [
+          { "name": "PendingWorker" },
+          { "name": "Active" }
         ]
       }
     },
     {
-      "name": "ProposalCancelled",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          { "name": "proposal", "type": "pubkey" },
-          { "name": "proposer", "type": "pubkey" }
-        ]
-      }
+      "name": "BondInitialised",
+      "type": { "kind": "struct", "fields": [
+        { "name": "bond",         "type": "pubkey" },
+        { "name": "proposer",     "type": "pubkey" },
+        { "name": "counterparty", "type": "pubkey" },
+        { "name": "expiry_slot",  "type": "u64" }
+      ]}
     },
     {
-      "name": "WagerInitialised",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          { "name": "wager", "type": "pubkey" },
-          { "name": "proposer", "type": "pubkey" },
-          { "name": "counterparty", "type": "pubkey" },
-          { "name": "expiry_slot", "type": "u64" }
-        ]
-      }
+      "name": "BondProposed",
+      "type": { "kind": "struct", "fields": [
+        { "name": "proposal",    "type": "pubkey" },
+        { "name": "proposer",    "type": "pubkey" },
+        { "name": "expiry_slot", "type": "u64" }
+      ]}
     },
     {
-      "name": "WagerSettled",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          { "name": "wager", "type": "pubkey" },
-          { "name": "proposer", "type": "pubkey" },
-          { "name": "counterparty", "type": "pubkey" },
-          { "name": "proposer_wins", "type": "bool" },
-          { "name": "final_price", "type": "i128" }
-        ]
-      }
+      "name": "BondCancelled",
+      "type": { "kind": "struct", "fields": [
+        { "name": "proposal", "type": "pubkey" },
+        { "name": "proposer", "type": "pubkey" }
+      ]}
+    },
+    {
+      "name": "BondSettled",
+      "type": { "kind": "struct", "fields": [
+        { "name": "bond",          "type": "pubkey" },
+        { "name": "proposer",      "type": "pubkey" },
+        { "name": "counterparty",  "type": "pubkey" },
+        { "name": "proposer_wins", "type": "bool" },
+        { "name": "final_price",   "type": "i128" }
+      ]}
+    },
+    {
+      "name": "WorkBondCreated",
+      "type": { "kind": "struct", "fields": [
+        { "name": "work_bond",    "type": "pubkey" },
+        { "name": "payer",        "type": "pubkey" },
+        { "name": "worker",       "type": "pubkey" },
+        { "name": "adjudicator",  "type": "pubkey" },
+        { "name": "payment",      "type": "u64" },
+        { "name": "worker_stake", "type": "u64" },
+        { "name": "expiry_slot",  "type": "u64" }
+      ]}
+    },
+    {
+      "name": "WorkBondJoined",
+      "type": { "kind": "struct", "fields": [
+        { "name": "work_bond", "type": "pubkey" },
+        { "name": "worker",    "type": "pubkey" }
+      ]}
+    },
+    {
+      "name": "WorkBondCompleted",
+      "type": { "kind": "struct", "fields": [
+        { "name": "work_bond",    "type": "pubkey" },
+        { "name": "payer",        "type": "pubkey" },
+        { "name": "worker",       "type": "pubkey" },
+        { "name": "payment",      "type": "u64" },
+        { "name": "worker_stake", "type": "u64" }
+      ]}
+    },
+    {
+      "name": "WorkBondFailed",
+      "type": { "kind": "struct", "fields": [
+        { "name": "work_bond",    "type": "pubkey" },
+        { "name": "payer",        "type": "pubkey" },
+        { "name": "worker",       "type": "pubkey" },
+        { "name": "payment",      "type": "u64" },
+        { "name": "worker_stake", "type": "u64" }
+      ]}
+    },
+    {
+      "name": "WorkBondExpired",
+      "type": { "kind": "struct", "fields": [
+        { "name": "work_bond",       "type": "pubkey" },
+        { "name": "payer",           "type": "pubkey" },
+        { "name": "worker_refunded", "type": "bool" }
+      ]}
     }
   ]
 }

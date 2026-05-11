@@ -1,0 +1,75 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/claw-dsl/work-bond/v1",
+  "title": "ClawDSL-WorkBond",
+  "description": "Claw-DSL v1: declarative schema for a peer-to-peer agent work contract on Solana",
+  "type": "object",
+  "required": [
+    "version",
+    "type",
+    "payer",
+    "worker",
+    "adjudicator",
+    "payment",
+    "worker_stake",
+    "expiry_slot"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "enum": ["1"],
+      "description": "Schema version"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["work"],
+      "description": "Bond type discriminator"
+    },
+    "payer": {
+      "type": "string",
+      "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$",
+      "description": "Base58 public key of the agent commissioning the work"
+    },
+    "worker": {
+      "type": "string",
+      "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$",
+      "description": "Base58 public key of the agent who will perform the work"
+    },
+    "adjudicator": {
+      "type": "string",
+      "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$",
+      "description": "Base58 public key of the agent (or human wallet) who will adjudicate task completion"
+    },
+    "payment": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Lamports released to the worker upon successful completion"
+    },
+    "worker_stake": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Lamports the worker must lock as collateral when joining. Forfeited to payer on failure."
+    },
+    "expiry_slot": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Absolute Solana slot at which the work bond can be expired without adjudication"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "Human-readable task description (off-chain only — not stored on-chain)"
+    },
+    "deliverable_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "URL where the completed work will be submitted (off-chain hint for the adjudicator)"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp at which the DSL was generated (informational only)"
+    }
+  }
+}

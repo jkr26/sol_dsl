@@ -5,3 +5,6 @@ node_modules/
 *.so
 skill/node_modules/
 skill/dist/
+
+test-ledger/
+skill/test-ledger/

@@ -3,10 +3,10 @@ seeds = false
 skip-lint = false
 
 [programs.localnet]
-sol_wager = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+clawbond = "GJYEW4jBbBZTVNTdG2AB3EHjC39hFuWWZjaxvDUpmZ3i"
 
 [programs.devnet]
-sol_wager = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+clawbond = "GJYEW4jBbBZTVNTdG2AB3EHjC39hFuWWZjaxvDUpmZ3i"
 
 [registry]
 url = "https://api.apr.dev"

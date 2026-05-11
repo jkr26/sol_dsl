@@ -6,7 +6,7 @@ import * as crypto from "crypto";
 const IDL = require("../idl.json");
 
 const PROGRAM_ID = new PublicKey(
-  process.env.SOL_WAGER_PROGRAM_ID || IDL.address
+  process.env.CLAWBOND_PROGRAM_ID || IDL.address
 );
 
 const CONDITION_BORSH: Record<string, string> = {
@@ -24,7 +24,7 @@ export function instructionDiscriminator(name: string): Buffer {
     .slice(0, 8);
 }
 
-export function verifyWagerTransaction(
+export function verifyBondTransaction(
   txHex: string,
   dsl: Record<string, any>
 ): { ok: boolean; errors: string[] } {
@@ -37,7 +37,7 @@ export function verifyWagerTransaction(
     return { ok: false, errors: [`Failed to deserialise transaction: ${e.message}`] };
   }
 
-  const discriminator = instructionDiscriminator("initialize_wager");
+  const discriminator = instructionDiscriminator("initialize_bond");
   const ix = tx.instructions.find(
     (i) =>
       i.programId.equals(PROGRAM_ID) &&
@@ -47,11 +47,11 @@ export function verifyWagerTransaction(
   if (!ix) {
     return {
       ok: false,
-      errors: ["No initialize_wager instruction found for the expected program"],
+      errors: ["No initialize_bond instruction found for the expected program"],
     };
   }
 
-  const [proposerKey, counterpartyKey, wagerKey, feedKey] = ix.keys.map(
+  const [proposerKey, counterpartyKey, bondKey, feedKey] = ix.keys.map(
     (k) => k.pubkey.toBase58()
   );
 
@@ -64,14 +64,14 @@ export function verifyWagerTransaction(
 
   const [expectedPda] = PublicKey.findProgramAddressSync(
     [
-      Buffer.from("wager"),
+      Buffer.from("bond"),
       new PublicKey(dsl.proposer).toBuffer(),
       new PublicKey(dsl.counterparty).toBuffer(),
     ],
     PROGRAM_ID
   );
-  if (wagerKey !== expectedPda.toBase58())
-    errors.push(`wager PDA mismatch: tx=${wagerKey} expected=${expectedPda.toBase58()}`);
+  if (bondKey !== expectedPda.toBase58())
+    errors.push(`bond PDA mismatch: tx=${bondKey} expected=${expectedPda.toBase58()}`);
 
   const coder = new BorshCoder(IDL);
   let params: any;

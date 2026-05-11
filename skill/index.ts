@@ -6,7 +6,7 @@ import { FileAuditBackend, wrapWithAudit } from "./src/audit";
 
 const DEFAULT_WALLET = path.join(os.homedir(), ".config", "solana", "id.json");
 const DEFAULT_RPC = "https://api.mainnet-beta.solana.com";
-const DEFAULT_STORE = path.join(os.homedir(), ".openclaw", "clawpact", "pending.json");
+const DEFAULT_STORE = path.join(os.homedir(), ".openclaw", "clawbond", "pending.json");
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const IDL = require("./idl.json");
@@ -33,7 +33,7 @@ function adaptTool(
 }
 
 export function register(api: any): void {
-  const pluginCfg = (api.config?.plugins?.["clawpact"] ?? {}) as Record<string, string>;
+  const pluginCfg = (api.config?.plugins?.["clawbond"] ?? {}) as Record<string, string>;
 
   const cfg = {
     walletPath: resolveStorePath(
@@ -42,14 +42,14 @@ export function register(api: any): void {
     rpcUrl: pluginCfg.rpcUrl ?? process.env.SOLANA_RPC_URL ?? DEFAULT_RPC,
     programId: PROGRAM_ID,
     storePath: resolveStorePath(
-      pluginCfg.storePath ?? process.env.SOL_WAGER_STORE_PATH ?? DEFAULT_STORE
+      pluginCfg.storePath ?? process.env.CLAWBOND_STORE_PATH ?? DEFAULT_STORE
     ),
     idl: IDL,
   };
 
   const auditPath = resolveStorePath(
-    pluginCfg.auditPath ?? process.env.SOL_WAGER_AUDIT_PATH ??
-    path.join(os.homedir(), ".openclaw", "clawpact", "audit.jsonl")
+    pluginCfg.auditPath ?? process.env.CLAWBOND_AUDIT_PATH ??
+    path.join(os.homedir(), ".openclaw", "clawbond", "audit.jsonl")
   );
   const audit = new FileAuditBackend(auditPath);
 

@@ -1,12 +1,12 @@
 [package]
-name = "sol_wager"
+name = "clawbond"
 version = "0.1.0"
-description = "Solana Agent-Wager: on-chain wager program using Chainlink price feeds"
+description = "ClawBond: agent-to-agent oracle-verified escrow and settlement on Solana"
 edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "sol_wager"
+name = "clawbond"
 
 [features]
 no-entrypoint = []
