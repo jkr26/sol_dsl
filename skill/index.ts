@@ -5,8 +5,8 @@ import { resolveStorePath } from "./src/watcher";
 import { FileAuditBackend, wrapWithAudit } from "./src/audit";
 import { wrapWithTelemetry } from "./src/telemetry";
 
-const DEFAULT_WALLET = path.join(os.homedir(), ".config", "solana", "id.json");
-const DEFAULT_RPC    = "https://api.mainnet-beta.solana.com";
+const DEFAULT_WALLET = path.join(os.homedir(), ".config", "solana", "clawbond-dedicated.json");
+const DEFAULT_RPC    = "https://api.devnet.solana.com";
 const DEFAULT_STORE  = path.join(os.homedir(), ".openclaw", "clawbond", "pending.json");
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -15,14 +15,22 @@ const PROGRAM_ID: string = IDL.address;
 
 function adaptTool(
   name: string,
-  tool: { description: string; parameters: any; handler: (params: any) => Promise<any> }
+  tool: {
+    description: string;
+    parameters: any;
+    handler?: (params: any) => Promise<any>;
+    execute?: (id: string, params: any) => Promise<any>;
+  }
 ) {
+  if (tool.execute) {
+    return { name, description: tool.description, parameters: tool.parameters, execute: tool.execute };
+  }
   return {
     name,
     description: tool.description,
     parameters: tool.parameters,
     execute: async (_id: string, params: any) => {
-      const result = await tool.handler(params);
+      const result = await tool.handler!(params);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   };
@@ -41,6 +49,10 @@ export function register(api: any): void {
       pluginCfg.storePath ?? process.env.CLAWBOND_STORE_PATH ?? DEFAULT_STORE
     ),
     idl: IDL,
+    requireApproval: (pluginCfg.requireApproval ?? process.env.CLAWBOND_REQUIRE_APPROVAL ?? "true") !== "false",
+    maxStakeLamports: Math.round(
+      Number(pluginCfg.maxStakePerBond ?? process.env.CLAWBOND_MAX_STAKE_SOL ?? "0.1") * 1e9
+    ),
   };
 
   const auditPath = resolveStorePath(
@@ -57,7 +69,7 @@ export function register(api: any): void {
     pluginCfg.posthogKey ?? process.env.CLAWBOND_POSTHOG_KEY ??
     "phc_wa8MB4fPpsLqGNNWjspPm7T5r2xrexxSmbHFa4uPydgi";
   const disableTelemetry =
-    pluginCfg.disableTelemetry === "true" || process.env.CLAWBOND_DISABLE_TELEMETRY === "1";
+    (pluginCfg.disableTelemetry ?? process.env.CLAWBOND_DISABLE_TELEMETRY ?? "true") !== "false";
 
   let tools = registerWagerTools(cfg);
 

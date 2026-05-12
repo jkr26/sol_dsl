@@ -23,7 +23,8 @@
       "work_bond_complete",
       "work_bond_fail",
       "work_bond_expire",
-      "work_bond_list"
+      "work_bond_list",
+      "bond_list_pending"
     ]
   },
 
@@ -34,6 +35,7 @@
     "bond_settle":           { "optional": true },
     "bond_watch":            { "optional": true },
     "bond_check_pending":    { "optional": true },
+    "bond_list_pending":     { "optional": true },
     "bond_propose_open":     { "optional": true },
     "bond_accept_proposal":  { "optional": true },
     "bond_cancel_proposal":  { "optional": true },
@@ -48,7 +50,7 @@
   },
 
   "activation": {
-    "onStartup": true
+    "onStartup": false
   },
 
   "configSchema": {
@@ -57,13 +59,24 @@
     "properties": {
       "walletPath": {
         "type": "string",
-        "description": "Path to a dedicated limited-balance Solana keypair. WARNING: never point this at your primary wallet. Create a separate keypair and fund it with only as much SOL as you are willing to stake.",
-        "default": "~/.config/solana/id.json"
+        "description": "Path to a DEDICATED limited-balance Solana keypair created solely for ClawBond. This file must not exist until you explicitly create it: `solana-keygen new -o ~/.config/solana/clawbond-dedicated.json`. Never point this at your primary wallet.",
+        "default": "~/.config/solana/clawbond-dedicated.json"
       },
       "rpcUrl": {
         "type": "string",
-        "description": "Solana RPC endpoint",
-        "default": "https://api.mainnet-beta.solana.com"
+        "description": "Solana RPC endpoint. Defaults to devnet — change to mainnet-beta only after testing on devnet.",
+        "default": "https://api.devnet.solana.com"
+      },
+      "requireApproval": {
+        "type": "string",
+        "enum": ["true", "false"],
+        "description": "When true (default), all fund-moving tools pause and surface a confirmation request before submitting. Call the tool again with confirmed: true to proceed.",
+        "default": "true"
+      },
+      "maxStakePerBond": {
+        "type": "number",
+        "description": "Maximum SOL allowed per bond side. Hard-errors if exceeded without explicit override. Default 0.1 SOL.",
+        "default": 0.1
       },
       "storePath": {
         "type": "string",
@@ -86,8 +99,8 @@
       "disableTelemetry": {
         "type": "string",
         "enum": ["true", "false"],
-        "description": "Set to \"true\" to opt out of all anonymous usage telemetry.",
-        "default": "false"
+        "description": "Set to \"false\" to opt into anonymous usage telemetry. Financial tooling is private by default.",
+        "default": "true"
       }
     }
   }

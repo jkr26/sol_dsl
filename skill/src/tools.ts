@@ -28,6 +28,31 @@ interface PluginConfig {
   programId: string;
   storePath: string;
   idl: object;
+  requireApproval: boolean;
+  maxStakeLamports: number;
+}
+
+// Returns a structured "needs confirmation" response for fund-moving tools.
+function pendingApproval(action: string, details: Record<string, unknown>) {
+  return {
+    success: false,
+    needs_confirmation: true,
+    action,
+    details,
+    next_step:
+      "Review the details above carefully. If you approve, call this tool again with confirmed: true.",
+  };
+}
+
+// Throws if the stake exceeds the configured cap.
+function checkStakeCap(lamports: number, maxLamports: number, fieldName: string): void {
+  if (lamports > maxLamports) {
+    const sol = (n: number) => `${(n / 1e9).toFixed(4)} SOL`;
+    throw new Error(
+      `${fieldName} (${sol(lamports)}) exceeds maxStakePerBond (${sol(maxLamports)}). ` +
+      `Increase maxStakePerBond in your ClawBond config to allow larger stakes.`
+    );
+  }
 }
 
 function getProgram(cfg: PluginConfig, wallet: WalletAdapter): Program {
@@ -102,7 +127,8 @@ export function registerWagerTools(cfg: PluginConfig) {
     bond_propose: {
       description:
         "Generate a Claw-DSL bond proposal and a durable-nonce transaction " +
-        "pre-signed by this agent as proposer. Send the returned bundle to the counterparty.",
+        "pre-signed by this agent as proposer. Send the returned bundle to the counterparty. " +
+        "Requires confirmation when requireApproval is enabled (the default).",
       parameters: Type.Object({
         counterparty: Type.String({ description: "Base58 public key of the counterparty agent" }),
         oracle_feed: Type.String({ description: "Base58 Chainlink on-chain aggregator public key" }),
@@ -116,6 +142,7 @@ export function registerWagerTools(cfg: PluginConfig) {
         proposer_stake: Type.Number({ description: "Lamports this agent stakes" }),
         counterparty_stake: Type.Number({ description: "Lamports required from the counterparty" }),
         nonce_account: Type.String({ description: "Base58 durable nonce account (must be owned by this agent)" }),
+        confirmed: Type.Optional(Type.Boolean({ description: "Set to true to confirm after reviewing the approval summary" })),
       }),
 
       handler: async (args: {
@@ -131,8 +158,23 @@ export function registerWagerTools(cfg: PluginConfig) {
         proposer_stake: number;
         counterparty_stake: number;
         nonce_account: string;
+        confirmed?: boolean;
       }) => {
         try {
+          checkStakeCap(args.proposer_stake, cfg.maxStakeLamports, "proposer_stake");
+
+          if (cfg.requireApproval && !args.confirmed) {
+            return pendingApproval("bond_propose", {
+              proposer_stake_sol: `${(args.proposer_stake / 1e9).toFixed(4)} SOL`,
+              counterparty_stake_sol: `${(args.counterparty_stake / 1e9).toFixed(4)} SOL`,
+              counterparty: args.counterparty,
+              condition: args.condition,
+              expiry_slot: args.expiry_slot,
+              oracle_feed: args.oracle_feed,
+              warning: "Proposing will lock your stake in escrow on-chain immediately.",
+            });
+          }
+
           const wallet = loadWallet(cfg.walletPath);
           const proposerPk = wallet.publicKey;
           const counterpartyPk = new PublicKey(args.counterparty);
@@ -203,6 +245,7 @@ export function registerWagerTools(cfg: PluginConfig) {
             dsl,
             tx_hex,
             bond_pda: bondPda.toBase58(),
+            amount_lamports: args.proposer_stake,
             next_step:
               "Send this bundle to the counterparty. Also call bond_watch so " +
               "settlement is tracked automatically if they accept.",
@@ -219,7 +262,7 @@ export function registerWagerTools(cfg: PluginConfig) {
     bond_inspect: {
       description:
         "Verify that a received tx_hex was compiled from the accompanying DSL. " +
-        "Always call this before bond_accept.",
+        "bond_accept runs this automatically — call bond_inspect separately for manual inspection.",
       parameters: Type.Object({
         dsl: Type.Object({}, { description: "The Claw-DSL object from the proposer", additionalProperties: true }),
         tx_hex: Type.String({ description: "Hex-encoded transaction from the proposer" }),
@@ -236,8 +279,8 @@ export function registerWagerTools(cfg: PluginConfig) {
             ? [
                 `Condition: ${args.dsl.condition} — you win as counterparty if condition is FALSE at slot ${args.dsl.expiry_slot}`,
                 `Oracle feed: ${args.dsl.oracle_feed}`,
-                `Proposer stakes: ${args.dsl.proposer_stake} lamports`,
-                `Your stake if you accept: ${args.dsl.counterparty_stake} lamports`,
+                `Proposer stakes: ${((args.dsl.proposer_stake as number) / 1e9).toFixed(4)} SOL`,
+                `Your stake if you accept: ${((args.dsl.counterparty_stake as number) / 1e9).toFixed(4)} SOL`,
                 `PDA derivation: ✓`,
               ].join("\n")
             : `VERIFICATION FAILED — do not accept.\n${result.errors.join("\n")}`;
@@ -254,14 +297,50 @@ export function registerWagerTools(cfg: PluginConfig) {
     // -----------------------------------------------------------------------
     bond_accept: {
       description:
-        "Countersign a verified bond proposal as counterparty and submit it to Solana. " +
-        "Both stakes are escrowed atomically. Only call after bond_inspect returns verified: true.",
+        "Countersign a bond proposal as counterparty and submit it to Solana. " +
+        "Automatically verifies the DSL against the transaction — rejects if verification fails. " +
+        "Requires confirmation when requireApproval is enabled (the default).",
       parameters: Type.Object({
+        dsl: Type.Object({}, {
+          description: "The Claw-DSL object from the proposer's bundle — used for automatic verification",
+          additionalProperties: true,
+        }),
         tx_hex: Type.String({ description: "The tx_hex from the proposer's bundle" }),
+        confirmed: Type.Optional(Type.Boolean({ description: "Set to true to confirm after reviewing the approval summary" })),
       }),
 
-      handler: async (args: { tx_hex: string }) => {
+      handler: async (args: { dsl: Record<string, unknown>; tx_hex: string; confirmed?: boolean }) => {
         try {
+          // Always verify the transaction against the DSL before anything else.
+          const verification = verifyBondTransaction(args.tx_hex, args.dsl) as {
+            ok: boolean;
+            errors: string[];
+          };
+          if (!verification.ok) {
+            return {
+              success: false,
+              error: "Transaction verification failed — DSL does not match the provided tx_hex. Do not accept.",
+              verification_errors: verification.errors,
+            };
+          }
+
+          const counterpartyStakeLamports = args.dsl.counterparty_stake as number;
+          checkStakeCap(counterpartyStakeLamports, cfg.maxStakeLamports, "counterparty_stake");
+
+          if (cfg.requireApproval && !args.confirmed) {
+            return pendingApproval("bond_accept", {
+              verified: true,
+              plain_english: [
+                `Condition: ${args.dsl.condition}`,
+                `You win if the condition is FALSE at slot ${args.dsl.expiry_slot}`,
+                `Oracle: ${args.dsl.oracle_feed}`,
+                `Proposer stakes: ${((args.dsl.proposer_stake as number) / 1e9).toFixed(4)} SOL`,
+                `Your stake: ${(counterpartyStakeLamports / 1e9).toFixed(4)} SOL`,
+              ].join(" | "),
+              warning: "Accepting will escrow your stake on-chain. This cannot be reversed once submitted.",
+            });
+          }
+
           const wallet = loadWallet(cfg.walletPath);
           const connection = new Connection(cfg.rpcUrl, "confirmed");
 
@@ -277,6 +356,7 @@ export function registerWagerTools(cfg: PluginConfig) {
           return {
             success: true,
             signature,
+            amount_lamports: counterpartyStakeLamports,
             next_step:
               "Bond escrowed. Call bond_watch with the DSL to register automatic settlement.",
             explorer: `https://explorer.solana.com/tx/${signature}?cluster=devnet`,
@@ -293,13 +373,15 @@ export function registerWagerTools(cfg: PluginConfig) {
     bond_settle: {
       description:
         "Settle an expired bond. Supply the address you believe won — the program " +
-        "verifies on-chain and reverts if wrong. Permissionless.",
+        "verifies on-chain and reverts if wrong. Permissionless. " +
+        "Requires confirmation when requireApproval is enabled.",
       parameters: Type.Object({
         bond_pda: Type.String(),
         proposer: Type.String(),
         counterparty: Type.String(),
         winner: Type.String({ description: "Must be proposer or counterparty" }),
         oracle_feed: Type.String(),
+        confirmed: Type.Optional(Type.Boolean({ description: "Set to true to confirm settlement" })),
       }),
 
       handler: async (args: {
@@ -308,8 +390,19 @@ export function registerWagerTools(cfg: PluginConfig) {
         counterparty: string;
         winner: string;
         oracle_feed: string;
+        confirmed?: boolean;
       }) => {
         try {
+          if (cfg.requireApproval && !args.confirmed) {
+            return pendingApproval("bond_settle", {
+              bond_pda: args.bond_pda,
+              proposed_winner: args.winner,
+              proposer: args.proposer,
+              counterparty: args.counterparty,
+              warning: "Settlement transfers all escrowed SOL to the winner on-chain.",
+            });
+          }
+
           const wallet = loadWallet(cfg.walletPath);
           const program = getProgram(cfg, wallet);
 
@@ -331,6 +424,7 @@ export function registerWagerTools(cfg: PluginConfig) {
           return {
             success: true,
             signature,
+            bond_pda: args.bond_pda,
             winner: args.winner,
             explorer: `https://explorer.solana.com/tx/${signature}?cluster=devnet`,
           };
@@ -389,13 +483,51 @@ export function registerWagerTools(cfg: PluginConfig) {
     },
 
     // -----------------------------------------------------------------------
+    // bond_list_pending  (read-only — never triggers settlement)
+    // -----------------------------------------------------------------------
+    bond_list_pending: {
+      description:
+        "List all locally-registered bonds being watched for settlement. " +
+        "Read-only — does not trigger any settlement. " +
+        "Use this to inspect pending bonds before calling bond_check_pending.",
+      parameters: Type.Object({}),
+
+      handler: async () => {
+        try {
+          const bonds = loadPendingBonds(cfg.storePath);
+          const connection = new Connection(cfg.rpcUrl, "confirmed");
+          const currentSlot = await connection.getSlot();
+
+          return {
+            success: true,
+            current_slot: currentSlot,
+            count: bonds.length,
+            bonds: bonds.map((b) => ({
+              ...b,
+              slots_remaining: Math.max(0, b.expiry_slot - currentSlot),
+              estimated_seconds_remaining: Math.max(
+                0,
+                Math.ceil((b.expiry_slot - currentSlot) * 0.45)
+              ),
+              expired: currentSlot >= b.expiry_slot,
+            })),
+            note: "Call bond_check_pending to settle expired bonds (with confirmed: true if requireApproval is enabled).",
+          };
+        } catch (e: unknown) {
+          return { success: false, error: String(e) };
+        }
+      },
+    },
+
+    // -----------------------------------------------------------------------
     // bond_propose_open  (single-sig; creates discoverable BondProposal)
     // -----------------------------------------------------------------------
     bond_propose_open: {
       description:
         "Open a public bond proposal on-chain — only you sign. Your stake is " +
         "escrowed immediately. Any agent can discover and accept it via bond_capabilities " +
-        "or bond_accept_proposal. One open proposal per wallet at a time.",
+        "or bond_accept_proposal. One open proposal per wallet at a time. " +
+        "Requires confirmation when requireApproval is enabled.",
       parameters: Type.Object({
         oracle_feed: Type.String({ description: "Base58 Chainlink aggregator address" }),
         condition: Type.String({ description: "PRICE_BELOW | PRICE_ABOVE | PRICE_BETWEEN | PRICE_CHANGE_PCT" }),
@@ -407,6 +539,7 @@ export function registerWagerTools(cfg: PluginConfig) {
         expiry_slot: Type.Number({ description: "Absolute Solana slot when the bond resolves" }),
         proposer_stake_sol: Type.Number({ description: "SOL you are staking" }),
         counterparty_stake_sol: Type.Number({ description: "SOL you require from whoever accepts" }),
+        confirmed: Type.Optional(Type.Boolean({ description: "Set to true to confirm after reviewing the approval summary" })),
       }),
 
       handler: async (args: {
@@ -420,8 +553,23 @@ export function registerWagerTools(cfg: PluginConfig) {
         expiry_slot: number;
         proposer_stake_sol: number;
         counterparty_stake_sol: number;
+        confirmed?: boolean;
       }) => {
         try {
+          const proposerStake = Math.round(args.proposer_stake_sol * 1e9);
+          checkStakeCap(proposerStake, cfg.maxStakeLamports, "proposer_stake_sol");
+
+          if (cfg.requireApproval && !args.confirmed) {
+            return pendingApproval("bond_propose_open", {
+              proposer_stake_sol: args.proposer_stake_sol,
+              counterparty_stake_sol: args.counterparty_stake_sol,
+              condition: args.condition,
+              expiry_slot: args.expiry_slot,
+              oracle_feed: args.oracle_feed,
+              warning: "Your stake is escrowed immediately and visible to all agents. Cancel with bond_cancel_proposal before acceptance.",
+            });
+          }
+
           const wallet = loadWallet(cfg.walletPath);
           const program = getProgram(cfg, wallet);
           const programId = new PublicKey(cfg.programId);
@@ -431,7 +579,6 @@ export function registerWagerTools(cfg: PluginConfig) {
             programId
           );
 
-          const proposerStake = Math.round(args.proposer_stake_sol * 1e9);
           const counterpartyStake = Math.round(args.counterparty_stake_sol * 1e9);
 
           const sig = await (program.methods as any)
@@ -457,6 +604,8 @@ export function registerWagerTools(cfg: PluginConfig) {
           return {
             success: true,
             proposal_address: proposalPda.toBase58(),
+            bond_pda: proposalPda.toBase58(),
+            amount_lamports: proposerStake,
             signature: sig,
             condition: args.condition,
             expiry_slot: args.expiry_slot,
@@ -478,12 +627,14 @@ export function registerWagerTools(cfg: PluginConfig) {
     bond_accept_proposal: {
       description:
         "Accept an open bond proposal by its on-chain address. Your stake is escrowed " +
-        "atomically with the proposer's. The bond is now active and will settle at expiry.",
+        "atomically with the proposer's. Automatically verifies proposal terms and requires " +
+        "confirmation when requireApproval is enabled.",
       parameters: Type.Object({
         proposal_address: Type.String({ description: "Base58 address of the BondProposal account" }),
+        confirmed: Type.Optional(Type.Boolean({ description: "Set to true to confirm after reviewing the proposal details" })),
       }),
 
-      handler: async (args: { proposal_address: string }) => {
+      handler: async (args: { proposal_address: string; confirmed?: boolean }) => {
         try {
           const wallet = loadWallet(cfg.walletPath);
           const program = getProgram(cfg, wallet);
@@ -500,6 +651,26 @@ export function registerWagerTools(cfg: PluginConfig) {
 
           const proposerPk = proposal.proposer as PublicKey;
           const oracleFeedPk = proposal.oracle_feed as PublicKey;
+          const conditionKey = Object.keys(proposal.condition)[0] as string;
+          const counterpartyStake = (proposal.counterparty_stake as { toNumber(): number }).toNumber();
+
+          checkStakeCap(counterpartyStake, cfg.maxStakeLamports, "counterparty_stake");
+
+          if (cfg.requireApproval && !args.confirmed) {
+            return pendingApproval("bond_accept_proposal", {
+              proposal_address: args.proposal_address,
+              proposer: proposerPk.toBase58(),
+              plain_english: [
+                `Condition: ${CONDITION_DSL_MAP[conditionKey] ?? conditionKey}`,
+                `You win as counterparty if the condition is FALSE at slot ${proposal.expiry_slot.toNumber()}`,
+                `Oracle: ${oracleFeedPk.toBase58()}`,
+                `Proposer stakes: ${(proposal.proposer_stake.toNumber() / 1e9).toFixed(4)} SOL`,
+                `Your stake: ${(counterpartyStake / 1e9).toFixed(4)} SOL`,
+                `Slots until expiry: ${proposal.expiry_slot.toNumber() - currentSlot} (~${Math.round((proposal.expiry_slot.toNumber() - currentSlot) * 0.4)}s)`,
+              ].join(" | "),
+              warning: "Accepting will escrow your stake on-chain. Cannot be cancelled after acceptance.",
+            });
+          }
 
           const [bondPda] = PublicKey.findProgramAddressSync(
             [Buffer.from("bond"), proposerPk.toBuffer(), wallet.publicKey.toBuffer()],
@@ -529,10 +700,12 @@ export function registerWagerTools(cfg: PluginConfig) {
           return {
             success: true,
             bond_address: bondPda.toBase58(),
+            bond_pda: bondPda.toBase58(),
             proposer: proposerPk.toBase58(),
             counterparty: wallet.publicKey.toBase58(),
             oracle_feed: oracleFeedPk.toBase58(),
             expiry_slot: proposal.expiry_slot.toNumber(),
+            amount_lamports: counterpartyStake,
             signature: sig,
             next_step:
               "Bond is active. Call bond_watch to register automatic settlement, " +
@@ -655,7 +828,7 @@ export function registerWagerTools(cfg: PluginConfig) {
                 description:
                   "Create an open bond — your stake is escrowed immediately. " +
                   "One open proposal per wallet. Specify condition, oracle feed, expiry slot, " +
-                  "and both stakes.",
+                  "and both stakes. Pass confirmed: true after reviewing the approval summary.",
                 cost: "proposer_stake_sol locked until expiry or cancellation",
                 example: {
                   oracle_feed: "HgTtcbcmp5BeThax5AU8vg4VwK79qAvAKKFMs8txMLW6",
@@ -671,7 +844,8 @@ export function registerWagerTools(cfg: PluginConfig) {
                 tool: "bond_accept_proposal",
                 description:
                   "Accept any open proposal by its on-chain address. " +
-                  "Your counterparty_stake is escrowed atomically. Cannot be cancelled after acceptance.",
+                  "Proposal terms are shown for review before funds move. " +
+                  "Pass confirmed: true to escrow your counterparty_stake atomically. Cannot be cancelled after acceptance.",
                 parameters: { proposal_address: "base58 address from open_opportunities list" },
               },
 
@@ -745,11 +919,19 @@ export function registerWagerTools(cfg: PluginConfig) {
     bond_check_pending: {
       description:
         "Check all watched bonds and settle any that have passed their expiry_slot. " +
-        "Called automatically by the schedule set up via bond_watch.",
-      parameters: Type.Object({}),
+        "When requireApproval is enabled (the default), returns a preview of what would settle " +
+        "without submitting — pass confirmed: true to actually settle. " +
+        "Use dry_run: true to always preview without settling regardless of requireApproval. " +
+        "Use bond_list_pending to inspect the watch list without triggering any settlement logic.",
+      parameters: Type.Object({
+        confirmed: Type.Optional(Type.Boolean({ description: "Set to true to execute settlement (required when requireApproval is enabled)" })),
+        dry_run: Type.Optional(Type.Boolean({ description: "Always preview what would settle without submitting any transactions" })),
+      }),
 
-      handler: async () => {
+      handler: async (args: { confirmed?: boolean; dry_run?: boolean }) => {
         try {
+          const isDryRun = args.dry_run === true || (cfg.requireApproval && !args.confirmed);
+
           const wallet = loadWallet(cfg.walletPath);
           const connection = new Connection(cfg.rpcUrl, "confirmed");
           const program = getProgram(cfg, wallet);
@@ -757,7 +939,37 @@ export function registerWagerTools(cfg: PluginConfig) {
           const pending = loadPendingBonds(cfg.storePath);
 
           if (pending.length === 0) {
-            return { success: true, message: "No pending bonds.", results: [] };
+            return { success: true, message: "No pending bonds.", results: [], dry_run: isDryRun };
+          }
+
+          if (isDryRun) {
+            // Startup summary: show state without settling anything.
+            const preview = pending.map((bond) => {
+              const expired = currentSlot >= bond.expiry_slot;
+              return {
+                bond_pda: bond.bond_pda,
+                status: expired ? "ready_to_settle" : "pending",
+                slots_remaining: Math.max(0, bond.expiry_slot - currentSlot),
+                estimated_seconds: Math.max(0, Math.ceil((bond.expiry_slot - currentSlot) * 0.45)),
+                proposer: bond.proposer,
+                counterparty: bond.counterparty,
+                expiry_slot: bond.expiry_slot,
+              };
+            });
+
+            const readyCount = preview.filter((r) => r.status === "ready_to_settle").length;
+            return {
+              success: true,
+              dry_run: true,
+              current_slot: currentSlot,
+              checked: pending.length,
+              ready_to_settle: readyCount,
+              still_pending: preview.filter((r) => r.status === "pending").length,
+              results: preview,
+              next_step: readyCount > 0
+                ? `${readyCount} bond(s) ready to settle. Call bond_check_pending with confirmed: true to submit settlement.`
+                : "No bonds are ready to settle yet.",
+            };
           }
 
           const results = [];
@@ -820,6 +1032,7 @@ export function registerWagerTools(cfg: PluginConfig) {
 
           return {
             success: true,
+            dry_run: false,
             current_slot: currentSlot,
             checked: pending.length,
             settled: results.filter((r) => r.status === "settled").length,
@@ -839,20 +1052,43 @@ export function registerWagerTools(cfg: PluginConfig) {
     work_bond_create: {
       name: "work_bond_create",
       description:
-        "Create a work bond: escrow a payment for a specific worker, with a collateral requirement and an adjudicator who decides the outcome.",
+        "Create a work bond: escrow a payment for a specific worker, with a collateral " +
+        "requirement and an adjudicator who decides the outcome. " +
+        "The adjudicator is a fixed keypair chosen at creation — see SKILL.md for selection guidance. " +
+        "Requires confirmation when requireApproval is enabled.",
       parameters: Type.Object({
         worker:       Type.String({ description: "Base58 pubkey of the agent who will do the work" }),
-        adjudicator:  Type.String({ description: "Base58 pubkey of the agent (or human) who will adjudicate completion" }),
+        adjudicator:  Type.String({ description: "Base58 pubkey of the agent (or human) who will adjudicate completion. Must be a trusted, pre-agreed party." }),
         payment:      Type.Number({ description: "Lamports to pay worker on success" }),
         worker_stake: Type.Number({ description: "Lamports worker must lock as collateral when joining" }),
         expiry_slot:  Type.Number({ description: "Slot deadline — after this, either party can call work_bond_expire" }),
+        confirmed:    Type.Optional(Type.Boolean({ description: "Set to true to confirm after reviewing the approval summary" })),
       }),
       async execute(_id: string, params: Record<string, unknown>) {
         try {
-          const cfg = (globalThis as any).__clawbond_cfg as PluginConfig;
-          const wallet = loadWallet(cfg.walletPath);
-          const program = getProgram(cfg, wallet);
-          const connection = new Connection(cfg.rpcUrl, "confirmed");
+          const payment = params.payment as number;
+          checkStakeCap(payment, cfg.maxStakeLamports, "payment");
+
+          if (cfg.requireApproval && !params.confirmed) {
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify(pendingApproval("work_bond_create", {
+                  payment_sol: `${(payment / 1e9).toFixed(4)} SOL`,
+                  worker_stake_sol: `${((params.worker_stake as number) / 1e9).toFixed(4)} SOL`,
+                  worker: params.worker,
+                  adjudicator: params.adjudicator,
+                  expiry_slot: params.expiry_slot,
+                  warning: "Payment is escrowed immediately. Outcome decided by the adjudicator keypair — ensure you trust this party.",
+                })),
+              }],
+            };
+          }
+
+          const pluginCfg = cfg;
+          const wallet = loadWallet(pluginCfg.walletPath);
+          const program = getProgram(pluginCfg, wallet);
+          const connection = new Connection(pluginCfg.rpcUrl, "confirmed");
 
           const payer      = wallet.publicKey;
           const worker     = new PublicKey(params.worker as string);
@@ -865,7 +1101,7 @@ export function registerWagerTools(cfg: PluginConfig) {
 
           const sig = await (program.methods as any)
             .createWorkBond({
-              payment:     new BN(params.payment as number),
+              payment:     new BN(payment),
               workerStake: new BN(params.worker_stake as number),
               expirySlot:  new BN(params.expiry_slot as number),
             })
@@ -880,20 +1116,26 @@ export function registerWagerTools(cfg: PluginConfig) {
 
           const slot = await connection.getSlot();
           return {
-            success: true,
-            work_bond_pda: workBondPda.toBase58(),
-            payer: payer.toBase58(),
-            worker: params.worker,
-            adjudicator: params.adjudicator,
-            payment: params.payment,
-            worker_stake: params.worker_stake,
-            expiry_slot: params.expiry_slot,
-            current_slot: slot,
-            signature: sig,
-            note: "Send work_bond_pda to the worker so they can call work_bond_join.",
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                work_bond_pda: workBondPda.toBase58(),
+                payer: payer.toBase58(),
+                worker: params.worker,
+                adjudicator: params.adjudicator,
+                payment: payment,
+                amount_lamports: payment,
+                worker_stake: params.worker_stake,
+                expiry_slot: params.expiry_slot,
+                current_slot: slot,
+                signature: sig,
+                note: "Send work_bond_pda to the worker so they can call work_bond_join.",
+              }),
+            }],
           };
         } catch (e: unknown) {
-          return { success: false, error: String(e) };
+          return { content: [{ type: "text", text: JSON.stringify({ success: false, error: String(e) }) }] };
         }
       },
     },
@@ -901,18 +1143,41 @@ export function registerWagerTools(cfg: PluginConfig) {
     work_bond_join: {
       name: "work_bond_join",
       description:
-        "Join a work bond as the designated worker, escrowing your collateral stake. Call this after receiving a work_bond_pda from the payer.",
+        "Join a work bond as the designated worker, escrowing your collateral stake. " +
+        "Call this after receiving a work_bond_pda from the payer. " +
+        "Requires confirmation when requireApproval is enabled.",
       parameters: Type.Object({
         work_bond_address: Type.String({ description: "Base58 address of the WorkBond PDA to join" }),
+        confirmed:         Type.Optional(Type.Boolean({ description: "Set to true to confirm after reviewing the bond details" })),
       }),
       async execute(_id: string, params: Record<string, unknown>) {
         try {
-          const cfg = (globalThis as any).__clawbond_cfg as PluginConfig;
-          const wallet = loadWallet(cfg.walletPath);
-          const program = getProgram(cfg, wallet);
+          const pluginCfg = cfg;
+          const wallet = loadWallet(pluginCfg.walletPath);
+          const program = getProgram(pluginCfg, wallet);
 
           const workBond = new PublicKey(params.work_bond_address as string);
           const acc = await (program.account as any).workBond.fetch(workBond);
+
+          const workerStake = (acc.workerStake as { toNumber(): number }).toNumber();
+          checkStakeCap(workerStake, pluginCfg.maxStakeLamports, "worker_stake");
+
+          if (pluginCfg.requireApproval && !params.confirmed) {
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify(pendingApproval("work_bond_join", {
+                  work_bond_pda: workBond.toBase58(),
+                  payer: acc.payer.toBase58(),
+                  payment_sol: `${(acc.payment.toNumber() / 1e9).toFixed(4)} SOL`,
+                  your_stake_sol: `${(workerStake / 1e9).toFixed(4)} SOL`,
+                  expiry_slot: acc.expirySlot.toNumber(),
+                  adjudicator: acc.adjudicator.toBase58(),
+                  warning: "Joining locks your collateral. The adjudicator decides if you receive payment or forfeit collateral.",
+                })),
+              }],
+            };
+          }
 
           const sig = await (program.methods as any)
             .joinWorkBond()
@@ -924,18 +1189,24 @@ export function registerWagerTools(cfg: PluginConfig) {
             .rpc();
 
           return {
-            success: true,
-            work_bond_pda: workBond.toBase58(),
-            payer: acc.payer.toBase58(),
-            worker: wallet.publicKey.toBase58(),
-            payment: acc.payment.toNumber(),
-            worker_stake: acc.workerStake.toNumber(),
-            expiry_slot: acc.expirySlot.toNumber(),
-            signature: sig,
-            note: "Work bond is now Active. Complete the task, then notify the adjudicator.",
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                work_bond_pda: workBond.toBase58(),
+                payer: acc.payer.toBase58(),
+                worker: wallet.publicKey.toBase58(),
+                payment: acc.payment.toNumber(),
+                worker_stake: workerStake,
+                amount_lamports: workerStake,
+                expiry_slot: acc.expirySlot.toNumber(),
+                signature: sig,
+                note: "Work bond is now Active. Complete the task, then notify the adjudicator.",
+              }),
+            }],
           };
         } catch (e: unknown) {
-          return { success: false, error: String(e) };
+          return { content: [{ type: "text", text: JSON.stringify({ success: false, error: String(e) }) }] };
         }
       },
     },
@@ -943,18 +1214,36 @@ export function registerWagerTools(cfg: PluginConfig) {
     work_bond_complete: {
       name: "work_bond_complete",
       description:
-        "Adjudicator confirms the worker completed the task. Worker receives the full payment plus their stake back.",
+        "Adjudicator confirms the worker completed the task. Worker receives the full payment plus their stake back. " +
+        "Only callable by the adjudicator keypair set at bond creation. " +
+        "Requires confirmation when requireApproval is enabled.",
       parameters: Type.Object({
         work_bond_address: Type.String({ description: "Base58 address of the WorkBond PDA" }),
+        confirmed:         Type.Optional(Type.Boolean({ description: "Set to true to confirm the adjudication decision" })),
       }),
       async execute(_id: string, params: Record<string, unknown>) {
         try {
-          const cfg = (globalThis as any).__clawbond_cfg as PluginConfig;
-          const wallet = loadWallet(cfg.walletPath);
-          const program = getProgram(cfg, wallet);
+          const pluginCfg = cfg;
+          const wallet = loadWallet(pluginCfg.walletPath);
+          const program = getProgram(pluginCfg, wallet);
 
           const workBond = new PublicKey(params.work_bond_address as string);
           const acc = await (program.account as any).workBond.fetch(workBond);
+          const payout = acc.payment.toNumber() + acc.workerStake.toNumber();
+
+          if (pluginCfg.requireApproval && !params.confirmed) {
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify(pendingApproval("work_bond_complete", {
+                  work_bond_pda: workBond.toBase58(),
+                  worker: acc.worker.toBase58(),
+                  payout_sol: `${(payout / 1e9).toFixed(4)} SOL (payment + collateral)`,
+                  warning: "This is an irreversible adjudicator decision. Worker will receive all funds.",
+                })),
+              }],
+            };
+          }
 
           const sig = await (program.methods as any)
             .completeWorkBond()
@@ -966,15 +1255,21 @@ export function registerWagerTools(cfg: PluginConfig) {
             .rpc();
 
           return {
-            success: true,
-            work_bond_pda: workBond.toBase58(),
-            worker: acc.worker.toBase58(),
-            payout: acc.payment.toNumber() + acc.workerStake.toNumber(),
-            signature: sig,
-            note: "Worker received payment + collateral. Bond closed.",
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                work_bond_pda: workBond.toBase58(),
+                worker: acc.worker.toBase58(),
+                payout,
+                amount_lamports: payout,
+                signature: sig,
+                note: "Worker received payment + collateral. Bond closed.",
+              }),
+            }],
           };
         } catch (e: unknown) {
-          return { success: false, error: String(e) };
+          return { content: [{ type: "text", text: JSON.stringify({ success: false, error: String(e) }) }] };
         }
       },
     },
@@ -982,18 +1277,36 @@ export function registerWagerTools(cfg: PluginConfig) {
     work_bond_fail: {
       name: "work_bond_fail",
       description:
-        "Adjudicator rules the worker failed or abandoned the task. Payer receives the payment back plus the worker's collateral as a penalty.",
+        "Adjudicator rules the worker failed or abandoned the task. Payer receives the payment back plus the worker's collateral as a penalty. " +
+        "Only callable by the adjudicator keypair set at bond creation. " +
+        "Requires confirmation when requireApproval is enabled.",
       parameters: Type.Object({
         work_bond_address: Type.String({ description: "Base58 address of the WorkBond PDA" }),
+        confirmed:         Type.Optional(Type.Boolean({ description: "Set to true to confirm the adjudication decision" })),
       }),
       async execute(_id: string, params: Record<string, unknown>) {
         try {
-          const cfg = (globalThis as any).__clawbond_cfg as PluginConfig;
-          const wallet = loadWallet(cfg.walletPath);
-          const program = getProgram(cfg, wallet);
+          const pluginCfg = cfg;
+          const wallet = loadWallet(pluginCfg.walletPath);
+          const program = getProgram(pluginCfg, wallet);
 
           const workBond = new PublicKey(params.work_bond_address as string);
           const acc = await (program.account as any).workBond.fetch(workBond);
+          const payout = acc.payment.toNumber() + acc.workerStake.toNumber();
+
+          if (pluginCfg.requireApproval && !params.confirmed) {
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify(pendingApproval("work_bond_fail", {
+                  work_bond_pda: workBond.toBase58(),
+                  payer: acc.payer.toBase58(),
+                  payout_sol: `${(payout / 1e9).toFixed(4)} SOL (payment returned + worker collateral penalty)`,
+                  warning: "This is an irreversible adjudicator decision. Worker forfeits collateral.",
+                })),
+              }],
+            };
+          }
 
           const sig = await (program.methods as any)
             .failWorkBond()
@@ -1005,15 +1318,21 @@ export function registerWagerTools(cfg: PluginConfig) {
             .rpc();
 
           return {
-            success: true,
-            work_bond_pda: workBond.toBase58(),
-            payer: acc.payer.toBase58(),
-            payout: acc.payment.toNumber() + acc.workerStake.toNumber(),
-            signature: sig,
-            note: "Payer received payment back + worker collateral. Bond closed.",
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                work_bond_pda: workBond.toBase58(),
+                payer: acc.payer.toBase58(),
+                payout,
+                amount_lamports: payout,
+                signature: sig,
+                note: "Payer received payment back + worker collateral. Bond closed.",
+              }),
+            }],
           };
         } catch (e: unknown) {
-          return { success: false, error: String(e) };
+          return { content: [{ type: "text", text: JSON.stringify({ success: false, error: String(e) }) }] };
         }
       },
     },
@@ -1021,20 +1340,38 @@ export function registerWagerTools(cfg: PluginConfig) {
     work_bond_expire: {
       name: "work_bond_expire",
       description:
-        "Permissionless expiry handler — callable by anyone after expiry_slot. Payer gets payment back; if worker had joined (Active state), worker also gets their stake back.",
+        "Permissionless expiry handler — callable by anyone after expiry_slot. Payer gets payment back; if worker had joined (Active state), worker also gets their stake back. " +
+        "Requires confirmation when requireApproval is enabled.",
       parameters: Type.Object({
         work_bond_address: Type.String({ description: "Base58 address of the WorkBond PDA" }),
+        confirmed:         Type.Optional(Type.Boolean({ description: "Set to true to confirm expiry" })),
       }),
       async execute(_id: string, params: Record<string, unknown>) {
         try {
-          const cfg = (globalThis as any).__clawbond_cfg as PluginConfig;
-          const wallet = loadWallet(cfg.walletPath);
-          const program = getProgram(cfg, wallet);
-          const connection = new Connection(cfg.rpcUrl, "confirmed");
+          const pluginCfg = cfg;
+          const wallet = loadWallet(pluginCfg.walletPath);
+          const program = getProgram(pluginCfg, wallet);
+          const connection = new Connection(pluginCfg.rpcUrl, "confirmed");
 
           const workBond = new PublicKey(params.work_bond_address as string);
           const acc = await (program.account as any).workBond.fetch(workBond);
           const currentSlot = await connection.getSlot();
+
+          if (pluginCfg.requireApproval && !params.confirmed) {
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify(pendingApproval("work_bond_expire", {
+                  work_bond_pda: workBond.toBase58(),
+                  payer: acc.payer.toBase58(),
+                  expiry_slot: acc.expirySlot.toNumber(),
+                  current_slot: currentSlot,
+                  worker_refunded: Object.keys(acc.state)[0] === "active",
+                  warning: "Expiring releases escrowed funds. Ensure expiry_slot has passed.",
+                })),
+              }],
+            };
+          }
 
           const sig = await (program.methods as any)
             .expireWorkBond()
@@ -1046,15 +1383,20 @@ export function registerWagerTools(cfg: PluginConfig) {
             .rpc();
 
           return {
-            success: true,
-            work_bond_pda: workBond.toBase58(),
-            expired_at_slot: currentSlot,
-            expiry_slot: acc.expirySlot.toNumber(),
-            worker_refunded: Object.keys(acc.state)[0] === "active",
-            signature: sig,
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                work_bond_pda: workBond.toBase58(),
+                expired_at_slot: currentSlot,
+                expiry_slot: acc.expirySlot.toNumber(),
+                worker_refunded: Object.keys(acc.state)[0] === "active",
+                signature: sig,
+              }),
+            }],
           };
         } catch (e: unknown) {
-          return { success: false, error: String(e) };
+          return { content: [{ type: "text", text: JSON.stringify({ success: false, error: String(e) }) }] };
         }
       },
     },
@@ -1072,10 +1414,10 @@ export function registerWagerTools(cfg: PluginConfig) {
       }),
       async execute(_id: string, params: Record<string, unknown>) {
         try {
-          const cfg = (globalThis as any).__clawbond_cfg as PluginConfig;
-          const wallet = loadWallet(cfg.walletPath);
-          const program = getProgram(cfg, wallet);
-          const connection = new Connection(cfg.rpcUrl, "confirmed");
+          const pluginCfg = cfg;
+          const wallet = loadWallet(pluginCfg.walletPath);
+          const program = getProgram(pluginCfg, wallet);
+          const connection = new Connection(pluginCfg.rpcUrl, "confirmed");
 
           const WORK_BOND_DISCRIMINATOR = Buffer.from([210, 210, 222, 171, 179, 60, 73, 78]);
           const accounts = await connection.getProgramAccounts(program.programId, {
@@ -1110,13 +1452,18 @@ export function registerWagerTools(cfg: PluginConfig) {
           }
 
           return {
-            success: true,
-            current_slot: currentSlot,
-            count: results.length,
-            work_bonds: results,
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                current_slot: currentSlot,
+                count: results.length,
+                work_bonds: results,
+              }),
+            }],
           };
         } catch (e: unknown) {
-          return { success: false, error: String(e) };
+          return { content: [{ type: "text", text: JSON.stringify({ success: false, error: String(e) }) }] };
         }
       },
     },
