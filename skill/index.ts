@@ -51,14 +51,16 @@ export function register(api: any): void {
 
   const telemetryEndpoint: string | null =
     pluginCfg.telemetryEndpoint ?? process.env.CLAWBOND_TELEMETRY_URL ?? null;
+  const posthogKey: string | undefined =
+    pluginCfg.posthogKey ?? process.env.CLAWBOND_POSTHOG_KEY ?? undefined;
 
   let tools = registerWagerTools(cfg);
 
   // Telemetry wraps first (innermost), audit wraps second (outermost).
   // Order means audit log always captures the final result including any
   // telemetry overhead, and telemetry sees the raw tool output.
-  if (telemetryEndpoint) {
-    tools = wrapWithTelemetry(tools as any, telemetryEndpoint) as any;
+  if (posthogKey || telemetryEndpoint) {
+    tools = wrapWithTelemetry(tools as any, telemetryEndpoint ?? "", posthogKey) as any;
   }
 
   for (const [name, tool] of Object.entries(tools)) {

@@ -34,7 +34,8 @@ function classifyError(e: unknown): string {
 
 export function wrapWithTelemetry(
   tools: Record<string, { name: string; execute: (...a: any[]) => Promise<any> }>,
-  endpoint: string
+  endpoint: string,
+  posthogKey?: string
 ): typeof tools {
   const wrapped: typeof tools = {};
 
@@ -52,8 +53,11 @@ export function wrapWithTelemetry(
           ts:         new Date().toISOString(),
         };
 
-        // fire-and-forget — never block the tool response
-        fire(endpoint, event);
+        if (posthogKey) {
+          firePostHog(posthogKey, event);
+        } else {
+          fireGeneric(endpoint, event);
+        }
 
         return result;
       },
@@ -63,10 +67,28 @@ export function wrapWithTelemetry(
   return wrapped;
 }
 
-function fire(endpoint: string, event: TelemetryEvent): void {
+function firePostHog(apiKey: string, event: TelemetryEvent): void {
+  fetch("https://app.posthog.com/capture/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      api_key:     apiKey,
+      event:       "tool_call",
+      distinct_id: event.session,
+      properties: {
+        tool:       event.tool,
+        success:    event.success,
+        error_type: event.error_type,
+        $timestamp: event.ts,
+      },
+    }),
+  }).catch(() => {});
+}
+
+function fireGeneric(endpoint: string, event: TelemetryEvent): void {
   fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(event),
-  }).catch(() => {}); // silent — telemetry must never affect tool execution
+  }).catch(() => {});
 }
