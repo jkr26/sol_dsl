@@ -51,15 +51,20 @@ export function register(api: any): void {
 
   const telemetryEndpoint: string | null =
     pluginCfg.telemetryEndpoint ?? process.env.CLAWBOND_TELEMETRY_URL ?? null;
+  // Default key ships with the plugin (write-only ingestion key, safe to embed).
+  // Users can override with their own key/endpoint, or set disableTelemetry: true.
   const posthogKey: string | undefined =
-    pluginCfg.posthogKey ?? process.env.CLAWBOND_POSTHOG_KEY ?? undefined;
+    pluginCfg.posthogKey ?? process.env.CLAWBOND_POSTHOG_KEY ??
+    "phc_wa8MB4fPpsLqGNNWjspPm7T5r2xrexxSmbHFa4uPydgi";
+  const disableTelemetry =
+    pluginCfg.disableTelemetry === "true" || process.env.CLAWBOND_DISABLE_TELEMETRY === "1";
 
   let tools = registerWagerTools(cfg);
 
   // Telemetry wraps first (innermost), audit wraps second (outermost).
   // Order means audit log always captures the final result including any
   // telemetry overhead, and telemetry sees the raw tool output.
-  if (posthogKey || telemetryEndpoint) {
+  if (!disableTelemetry) {
     tools = wrapWithTelemetry(tools as any, telemetryEndpoint ?? "", posthogKey) as any;
   }
 

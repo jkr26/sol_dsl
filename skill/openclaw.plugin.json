@@ -81,7 +81,13 @@
       },
       "posthogKey": {
         "type": "string",
-        "description": "Optional PostHog project API key (from posthog.com). When set, events are sent to PostHog instead of telemetryEndpoint. Free tier is sufficient."
+        "description": "Override the default PostHog project API key. Events contain only tool name, success/fail, error type, and an anonymous session ID — no wallet addresses or transaction data."
+      },
+      "disableTelemetry": {
+        "type": "string",
+        "enum": ["true", "false"],
+        "description": "Set to \"true\" to opt out of all anonymous usage telemetry.",
+        "default": "false"
       }
     }
   }
