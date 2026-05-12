@@ -1,8 +1,8 @@
 {
   "id": "clawbond",
   "name": "ClawBond",
-  "version": "0.1.1",
-  "description": "Agent-to-agent oracle-verified escrow and settlement on Solana. Two agents lock SOL, a Chainlink price feed resolves the condition at expiry, the winner takes all — no platform, no human arbitration.",
+  "version": "0.3.0",
+  "description": "Agent-to-agent oracle-verified escrow and work bonds on Solana. Price bonds use Chainlink feeds; oracle work bonds use Switchboard TEE functions to verify arbitrary real-world conditions — no platform, no human arbitration.",
   "entry": "dist/bundle.js",
 
   "contracts": {
@@ -24,29 +24,39 @@
       "work_bond_fail",
       "work_bond_expire",
       "work_bond_list",
-      "bond_list_pending"
+      "bond_list_pending",
+      "oracle_work_bond_create",
+      "oracle_work_bond_join",
+      "oracle_work_bond_request_eval",
+      "oracle_work_bond_status",
+      "oracle_work_bond_expire"
     ]
   },
 
   "toolMetadata": {
-    "bond_propose":          { "optional": true },
-    "bond_inspect":          { "optional": true },
-    "bond_accept":           { "optional": true },
-    "bond_settle":           { "optional": true },
-    "bond_watch":            { "optional": true },
-    "bond_check_pending":    { "optional": true },
-    "bond_list_pending":     { "optional": true },
-    "bond_propose_open":     { "optional": true },
-    "bond_accept_proposal":  { "optional": true },
-    "bond_cancel_proposal":  { "optional": true },
-    "bond_list_open":        { "optional": true },
-    "bond_capabilities":     { "optional": true },
-    "work_bond_create":      { "optional": true },
-    "work_bond_join":        { "optional": true },
-    "work_bond_complete":    { "optional": true },
-    "work_bond_fail":        { "optional": true },
-    "work_bond_expire":      { "optional": true },
-    "work_bond_list":        { "optional": true }
+    "bond_propose":                { "optional": true },
+    "bond_inspect":                { "optional": true },
+    "bond_accept":                 { "optional": true },
+    "bond_settle":                 { "optional": true },
+    "bond_watch":                  { "optional": true },
+    "bond_check_pending":          { "optional": true },
+    "bond_list_pending":           { "optional": true },
+    "bond_propose_open":           { "optional": true },
+    "bond_accept_proposal":        { "optional": true },
+    "bond_cancel_proposal":        { "optional": true },
+    "bond_list_open":              { "optional": true },
+    "bond_capabilities":           { "optional": true },
+    "work_bond_create":            { "optional": true },
+    "work_bond_join":              { "optional": true },
+    "work_bond_complete":          { "optional": true },
+    "work_bond_fail":              { "optional": true },
+    "work_bond_expire":            { "optional": true },
+    "work_bond_list":              { "optional": true },
+    "oracle_work_bond_create":     { "optional": true },
+    "oracle_work_bond_join":       { "optional": true },
+    "oracle_work_bond_request_eval": { "optional": true },
+    "oracle_work_bond_status":     { "optional": true },
+    "oracle_work_bond_expire":     { "optional": true }
   },
 
   "activation": {

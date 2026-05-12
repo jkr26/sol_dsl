@@ -1401,6 +1401,382 @@ export function registerWagerTools(cfg: PluginConfig) {
       },
     },
 
+    // -------------------------------------------------------------------------
+    // Oracle work bond tools — Switchboard TEE adjudication, no human in loop
+    // -------------------------------------------------------------------------
+
+    oracle_work_bond_create: {
+      name: "oracle_work_bond_create",
+      description:
+        "Create an oracle-adjudicated work bond. The completion condition is evaluated " +
+        "off-chain by a Switchboard TEE function — no trusted human adjudicator required. " +
+        "The payer commits to a Switchboard function pubkey and a SHA-256 hash of the " +
+        "evaluation params JSON. Both are immutable after creation. " +
+        "Requires confirmation when requireApproval is enabled.",
+      parameters: Type.Object({
+        worker:           Type.String({ description: "Base58 pubkey of the agent who will do the work" }),
+        sb_function:      Type.String({ description: "Base58 pubkey of the deployed Switchboard FunctionAccountData" }),
+        payment:          Type.Number({ description: "Lamports to pay worker on success" }),
+        worker_stake:     Type.Number({ description: "Lamports worker must lock as collateral" }),
+        expiry_slot:      Type.Number({ description: "Slot deadline — oracle must respond before this" }),
+        eval_template:    Type.String({ description: "Evaluation template: github_pr_merged | http_get | solana_tx_confirmed | ipfs_cid_exists" }),
+        eval_params:      Type.Object({}, { additionalProperties: true, description: "Template-specific params (excluding oracle_work_bond/payer/worker — added automatically)" }),
+        confirmed:        Type.Optional(Type.Boolean({ description: "Set to true to confirm after reviewing the approval summary" })),
+      }),
+      async execute(_id: string, params: Record<string, unknown>) {
+        try {
+          const payment = params.payment as number;
+          checkStakeCap(payment, cfg.maxStakeLamports, "payment");
+
+          const wallet = loadWallet(cfg.walletPath);
+          const programId = new PublicKey(cfg.programId);
+
+          const [oracleWorkBondPda] = PublicKey.findProgramAddressSync(
+            [Buffer.from("oracle-workbond"), wallet.publicKey.toBuffer(), new PublicKey(params.worker as string).toBuffer()],
+            programId
+          );
+
+          // Build the full params object — includes the bond address so the TEE knows where to callback.
+          const fullParams = {
+            template: params.eval_template,
+            oracle_work_bond: oracleWorkBondPda.toBase58(),
+            payer: wallet.publicKey.toBase58(),
+            worker: params.worker,
+            ...(params.eval_params as object),
+          };
+          const paramsJson = JSON.stringify(fullParams);
+          const paramsBytes = Buffer.from(paramsJson);
+
+          // SHA-256 of params JSON — committed on-chain at creation.
+          const { createHash } = await import("crypto");
+          const paramsHash = Array.from(createHash("sha256").update(paramsBytes).digest());
+
+          if (cfg.requireApproval && !params.confirmed) {
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify(pendingApproval("oracle_work_bond_create", {
+                  payment_sol: `${(payment / 1e9).toFixed(4)} SOL`,
+                  worker_stake_sol: `${((params.worker_stake as number) / 1e9).toFixed(4)} SOL`,
+                  worker: params.worker,
+                  sb_function: params.sb_function,
+                  eval_template: params.eval_template,
+                  eval_params: params.eval_params,
+                  params_hash: Buffer.from(paramsHash).toString("hex"),
+                  oracle_work_bond_pda: oracleWorkBondPda.toBase58(),
+                  warning: "Payment is escrowed immediately. Outcome decided by the Switchboard TEE oracle — fully trustless, no human arbitration.",
+                })),
+              }],
+            };
+          }
+
+          const program = getProgram(cfg, wallet);
+          const connection = new Connection(cfg.rpcUrl, "confirmed");
+
+          const sig = await (program.methods as any)
+            .createOracleWorkBond({
+              payment:      new BN(payment),
+              workerStake:  new BN(params.worker_stake as number),
+              expirySlot:   new BN(params.expiry_slot as number),
+              paramsHash,
+            })
+            .accounts({
+              payer:           wallet.publicKey,
+              worker:          new PublicKey(params.worker as string),
+              sbFunction:      new PublicKey(params.sb_function as string),
+              oracleWorkBond:  oracleWorkBondPda,
+              systemProgram:   SystemProgram.programId,
+            })
+            .rpc();
+
+          const slot = await connection.getSlot();
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                oracle_work_bond_pda: oracleWorkBondPda.toBase58(),
+                bond_pda: oracleWorkBondPda.toBase58(),
+                amount_lamports: payment,
+                params_hash: Buffer.from(paramsHash).toString("hex"),
+                params_json: paramsJson,
+                signature: sig,
+                current_slot: slot,
+                note: "Send oracle_work_bond_pda and params_json to the worker so they can join. Keep params_json — it is required to trigger evaluation.",
+              }),
+            }],
+          };
+        } catch (e: unknown) {
+          return { content: [{ type: "text", text: JSON.stringify({ success: false, error: String(e) }) }] };
+        }
+      },
+    },
+
+    oracle_work_bond_join: {
+      name: "oracle_work_bond_join",
+      description:
+        "Join an oracle work bond as the designated worker, escrowing your collateral stake. " +
+        "Requires confirmation when requireApproval is enabled.",
+      parameters: Type.Object({
+        oracle_work_bond_address: Type.String({ description: "Base58 address of the OracleWorkBond PDA" }),
+        confirmed:                Type.Optional(Type.Boolean()),
+      }),
+      async execute(_id: string, params: Record<string, unknown>) {
+        try {
+          const wallet = loadWallet(cfg.walletPath);
+          const program = getProgram(cfg, wallet);
+
+          const bondPk = new PublicKey(params.oracle_work_bond_address as string);
+          const acc = await (program.account as any).oracleWorkBond.fetch(bondPk);
+          const workerStake = (acc.workerStake as { toNumber(): number }).toNumber();
+          checkStakeCap(workerStake, cfg.maxStakeLamports, "worker_stake");
+
+          if (cfg.requireApproval && !params.confirmed) {
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify(pendingApproval("oracle_work_bond_join", {
+                  oracle_work_bond_pda: bondPk.toBase58(),
+                  payer: acc.payer.toBase58(),
+                  payment_sol: `${(acc.payment.toNumber() / 1e9).toFixed(4)} SOL`,
+                  your_stake_sol: `${(workerStake / 1e9).toFixed(4)} SOL`,
+                  expiry_slot: acc.expirySlot.toNumber(),
+                  sb_function: acc.sbFunction.toBase58(),
+                  warning: "Joining locks your collateral. A Switchboard TEE oracle — not a human — will determine if you receive payment.",
+                })),
+              }],
+            };
+          }
+
+          const sig = await (program.methods as any)
+            .joinOracleWorkBond()
+            .accounts({
+              worker:          wallet.publicKey,
+              oracleWorkBond:  bondPk,
+              systemProgram:   SystemProgram.programId,
+            })
+            .rpc();
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                oracle_work_bond_pda: bondPk.toBase58(),
+                bond_pda: bondPk.toBase58(),
+                amount_lamports: workerStake,
+                worker: wallet.publicKey.toBase58(),
+                payer: acc.payer.toBase58(),
+                payment_on_success: acc.payment.toNumber(),
+                expiry_slot: acc.expirySlot.toNumber(),
+                signature: sig,
+                note: "Work bond is now Active. Complete the task, then call oracle_work_bond_request_eval with the original params_json.",
+              }),
+            }],
+          };
+        } catch (e: unknown) {
+          return { content: [{ type: "text", text: JSON.stringify({ success: false, error: String(e) }) }] };
+        }
+      },
+    },
+
+    oracle_work_bond_request_eval: {
+      name: "oracle_work_bond_request_eval",
+      description:
+        "Trigger oracle evaluation of a completed oracle work bond. " +
+        "Registers the evaluation request on-chain (verifying params hash), then creates " +
+        "and triggers a Switchboard FunctionRequest off-chain. The Switchboard TEE fetches " +
+        "real-world data, evaluates the condition, and calls oracle_callback automatically. " +
+        "Permissionless — anyone can call once the work is claimed complete.",
+      parameters: Type.Object({
+        oracle_work_bond_address: Type.String({ description: "Base58 address of the OracleWorkBond PDA" }),
+        params_json:              Type.String({ description: "The params_json returned from oracle_work_bond_create — must match the committed hash exactly" }),
+      }),
+      async execute(_id: string, params: Record<string, unknown>) {
+        try {
+          const wallet = loadWallet(cfg.walletPath);
+          const program = getProgram(cfg, wallet);
+          const connection = new Connection(cfg.rpcUrl, "confirmed");
+
+          const bondPk = new PublicKey(params.oracle_work_bond_address as string);
+          const acc = await (program.account as any).oracleWorkBond.fetch(bondPk);
+          const paramsBytes = Buffer.from(params.params_json as string);
+
+          // 1. Register evaluation request on-chain (program verifies params hash).
+          const sig = await (program.methods as any)
+            .requestOracleEvaluation(Array.from(paramsBytes))
+            .accounts({ oracleWorkBond: bondPk })
+            .rpc();
+
+          // 2. Create and trigger a Switchboard FunctionRequest off-chain.
+          // The Switchboard SDK is called here so the oracle network picks up the job.
+          // switchboard_request_signature is null in environments without the SB SDK.
+          let switchboard_request_signature: string | null = null;
+          try {
+            // Optional dependency — bypass TS module resolution with indirect import
+            const sbPkg = "@switchboard-xyz/solana.js";
+            // eslint-disable-next-line @typescript-eslint/no-implied-eval
+            const { SwitchboardProgram, FunctionAccount, FunctionRequestAccount } =
+              await (new Function("m", "return import(m)"))(sbPkg) as any;
+            const sbProgram = await SwitchboardProgram.load("devnet", connection);
+            const [fnAccount] = FunctionAccount.fromSeed(sbProgram, acc.sbFunction);
+            const [requestAccount, requestSig] = await FunctionRequestAccount.create(
+              sbProgram,
+              {
+                function: fnAccount,
+                params: paramsBytes,
+                authority: wallet,
+              }
+            );
+            await requestAccount.trigger(wallet);
+            switchboard_request_signature = requestSig;
+          } catch (sbErr) {
+            // Switchboard SDK may not be installed in all environments.
+            // The on-chain request is registered; the oracle can still be triggered
+            // manually using the Switchboard CLI: `sb request trigger <request_key>`
+          }
+
+          const currentSlot = await connection.getSlot();
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                oracle_work_bond_pda: bondPk.toBase58(),
+                bond_pda: bondPk.toBase58(),
+                on_chain_signature: sig,
+                switchboard_request_signature,
+                current_slot: currentSlot,
+                sb_function: acc.sbFunction.toBase58(),
+                note: switchboard_request_signature
+                  ? "Switchboard request triggered. The TEE oracle will evaluate the condition and call oracle_callback automatically."
+                  : "On-chain request registered. Trigger the Switchboard request manually: `sb request trigger --function <sb_function>` with the params_json.",
+              }),
+            }],
+          };
+        } catch (e: unknown) {
+          return { content: [{ type: "text", text: JSON.stringify({ success: false, error: String(e) }) }] };
+        }
+      },
+    },
+
+    oracle_work_bond_status: {
+      name: "oracle_work_bond_status",
+      description:
+        "Check the current state of an oracle work bond. Returns the state, amounts, " +
+        "and how to proceed. Read-only.",
+      parameters: Type.Object({
+        oracle_work_bond_address: Type.String({ description: "Base58 address of the OracleWorkBond PDA" }),
+      }),
+      async execute(_id: string, params: Record<string, unknown>) {
+        try {
+          const wallet = loadWallet(cfg.walletPath);
+          const program = getProgram(cfg, wallet);
+          const connection = new Connection(cfg.rpcUrl, "confirmed");
+
+          const bondPk = new PublicKey(params.oracle_work_bond_address as string);
+          const acc = await (program.account as any).oracleWorkBond.fetch(bondPk);
+          const currentSlot = await connection.getSlot();
+          const state = Object.keys(acc.state)[0] as string;
+          const expired = currentSlot >= acc.expirySlot.toNumber();
+
+          const next_step: Record<string, string> = {
+            pendingWorker:       "Send this address to the worker. They call oracle_work_bond_join.",
+            active:              "Worker should complete the task, then call oracle_work_bond_request_eval with the original params_json.",
+            evaluationRequested: "Switchboard oracle is evaluating. oracle_callback will settle automatically.",
+            settled:             "Bond is settled. Funds have been disbursed.",
+          };
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                oracle_work_bond_pda: bondPk.toBase58(),
+                payer: acc.payer.toBase58(),
+                worker: acc.worker.toBase58(),
+                sb_function: acc.sbFunction.toBase58(),
+                payment_sol: (acc.payment.toNumber() / 1e9).toFixed(4),
+                worker_stake_sol: (acc.workerStake.toNumber() / 1e9).toFixed(4),
+                expiry_slot: acc.expirySlot.toNumber(),
+                current_slot: currentSlot,
+                slots_remaining: Math.max(0, acc.expirySlot.toNumber() - currentSlot),
+                state,
+                expired,
+                next_step: expired && state !== "settled"
+                  ? "Bond has expired without oracle resolution. Call oracle_work_bond_expire to return funds."
+                  : (next_step[state] ?? "Unknown state."),
+              }),
+            }],
+          };
+        } catch (e: unknown) {
+          return { content: [{ type: "text", text: JSON.stringify({ success: false, error: String(e) }) }] };
+        }
+      },
+    },
+
+    oracle_work_bond_expire: {
+      name: "oracle_work_bond_expire",
+      description:
+        "Permissionless expiry for an oracle work bond that was never resolved by the oracle. " +
+        "After expiry_slot, payer gets their payment back and the worker gets their stake back " +
+        "(no penalty — the oracle is the missing party, not either agent). " +
+        "Requires confirmation when requireApproval is enabled.",
+      parameters: Type.Object({
+        oracle_work_bond_address: Type.String({ description: "Base58 address of the OracleWorkBond PDA" }),
+        confirmed:                Type.Optional(Type.Boolean()),
+      }),
+      async execute(_id: string, params: Record<string, unknown>) {
+        try {
+          const wallet = loadWallet(cfg.walletPath);
+          const program = getProgram(cfg, wallet);
+          const connection = new Connection(cfg.rpcUrl, "confirmed");
+
+          const bondPk = new PublicKey(params.oracle_work_bond_address as string);
+          const acc = await (program.account as any).oracleWorkBond.fetch(bondPk);
+          const currentSlot = await connection.getSlot();
+
+          if (cfg.requireApproval && !params.confirmed) {
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify(pendingApproval("oracle_work_bond_expire", {
+                  oracle_work_bond_pda: bondPk.toBase58(),
+                  expiry_slot: acc.expirySlot.toNumber(),
+                  current_slot: currentSlot,
+                  state: Object.keys(acc.state)[0],
+                  warning: "Expiring releases escrowed funds back to payer and worker. Cannot be undone.",
+                })),
+              }],
+            };
+          }
+
+          const sig = await (program.methods as any)
+            .expireOracleWorkBond()
+            .accounts({
+              payer:          acc.payer,
+              worker:         acc.worker,
+              oracleWorkBond: bondPk,
+            })
+            .rpc();
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                oracle_work_bond_pda: bondPk.toBase58(),
+                signature: sig,
+                expired_at_slot: currentSlot,
+              }),
+            }],
+          };
+        } catch (e: unknown) {
+          return { content: [{ type: "text", text: JSON.stringify({ success: false, error: String(e) }) }] };
+        }
+      },
+    },
+
     work_bond_list: {
       name: "work_bond_list",
       description:

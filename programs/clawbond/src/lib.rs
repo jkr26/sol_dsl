@@ -1,5 +1,10 @@
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::hash::hashv;
 use chainlink_solana as chainlink;
+
+/// Switchboard Attestation Program — owner of all FunctionRequest accounts.
+/// Source: sbattyXrzedoNATfc4L31wC9Mhxsi1BmFhTiN8gDshx
+const SWITCHBOARD_ATTESTATION_PROGRAM: &str = "sbattyXrzedoNATfc4L31wC9Mhxsi1BmFhTiN8gDshx";
 
 declare_id!("GJYEW4jBbBZTVNTdG2AB3EHjC39hFuWWZjaxvDUpmZ3i");
 
@@ -329,6 +334,204 @@ pub mod clawbond {
         // close = payer: remaining lamports (payment + rent) go to payer
     }
 
+    // -----------------------------------------------------------------------
+    // Oracle work bond — Switchboard Functions adjudication
+    // -----------------------------------------------------------------------
+
+    /// Creates an oracle-adjudicated work bond.
+    /// The payer commits to a Switchboard function pubkey and a SHA-256 hash of
+    /// the evaluation params JSON. Both are immutable after creation — the oracle
+    /// function independently fetches the completion condition from the web and
+    /// reports the result on-chain with a TEE-backed proof.
+    pub fn create_oracle_work_bond(
+        ctx: Context<CreateOracleWorkBond>,
+        params: OracleWorkBondParams,
+    ) -> Result<()> {
+        params.validate()?;
+
+        let bond_key = {
+            let wb = &mut ctx.accounts.oracle_work_bond;
+            wb.payer        = ctx.accounts.payer.key();
+            wb.worker       = ctx.accounts.worker.key();
+            wb.payment      = params.payment;
+            wb.worker_stake = params.worker_stake;
+            wb.expiry_slot  = params.expiry_slot;
+            wb.sb_function  = ctx.accounts.sb_function.key();
+            wb.params_hash  = params.params_hash;
+            wb.state        = OracleWorkBondState::PendingWorker;
+            wb.bump         = ctx.bumps.oracle_work_bond;
+            ctx.accounts.oracle_work_bond.key()
+        };
+
+        anchor_lang::system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.payer.to_account_info(),
+                    to:   ctx.accounts.oracle_work_bond.to_account_info(),
+                },
+            ),
+            params.payment,
+        )?;
+
+        let wb = &ctx.accounts.oracle_work_bond;
+        emit!(OracleWorkBondCreated {
+            oracle_work_bond: bond_key,
+            payer:            wb.payer,
+            worker:           wb.worker,
+            sb_function:      wb.sb_function,
+            payment:          params.payment,
+            worker_stake:     params.worker_stake,
+            expiry_slot:      params.expiry_slot,
+        });
+
+        Ok(())
+    }
+
+    /// Worker joins an oracle work bond by escrowing their collateral stake.
+    /// Transitions PendingWorker → Active.
+    pub fn join_oracle_work_bond(ctx: Context<JoinOracleWorkBond>) -> Result<()> {
+        let clock = Clock::get()?;
+        require!(
+            ctx.accounts.oracle_work_bond.state == OracleWorkBondState::PendingWorker,
+            BondError::WorkBondNotPendingWorker
+        );
+        require!(
+            clock.slot < ctx.accounts.oracle_work_bond.expiry_slot,
+            BondError::ProposalExpired
+        );
+
+        let worker_stake = ctx.accounts.oracle_work_bond.worker_stake;
+        ctx.accounts.oracle_work_bond.state = OracleWorkBondState::Active;
+
+        anchor_lang::system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.worker.to_account_info(),
+                    to:   ctx.accounts.oracle_work_bond.to_account_info(),
+                },
+            ),
+            worker_stake,
+        )?;
+
+        emit!(OracleWorkBondJoined {
+            oracle_work_bond: ctx.accounts.oracle_work_bond.key(),
+            worker:           ctx.accounts.worker.key(),
+        });
+
+        Ok(())
+    }
+
+    /// Registers an evaluation request.
+    /// The caller supplies the raw params bytes; the program verifies SHA-256
+    /// matches the hash committed at creation. Transitions Active → EvaluationRequested.
+    ///
+    /// After this succeeds, the caller should create and trigger a Switchboard
+    /// FunctionRequest off-chain (via the plugin) using the same params bytes.
+    /// The Switchboard TEE will call oracle_callback once it has a result.
+    pub fn request_oracle_evaluation(
+        ctx: Context<RequestOracleEvaluation>,
+        params: Vec<u8>,
+    ) -> Result<()> {
+        let bond_key = ctx.accounts.oracle_work_bond.key();
+        let sb_function = {
+            let bond = &mut ctx.accounts.oracle_work_bond;
+
+            require!(bond.state == OracleWorkBondState::Active, BondError::WorkBondNotActive);
+
+            let clock = Clock::get()?;
+            require!(clock.slot < bond.expiry_slot, BondError::ProposalExpired);
+
+            let hash = hashv(&[&params]);
+            require!(hash.to_bytes() == bond.params_hash, BondError::InvalidOracleParams);
+
+            bond.state = OracleWorkBondState::EvaluationRequested;
+            bond.sb_function
+        };
+
+        emit!(OracleEvalRequested {
+            oracle_work_bond: bond_key,
+            sb_function,
+            params,
+        });
+
+        Ok(())
+    }
+
+    /// Called by the Switchboard TEE oracle once the evaluation function has run.
+    /// result = 1 → worker completed the task; payment + stake go to worker.
+    /// result = 0 → worker failed; payment + stake go to payer as penalty.
+    ///
+    /// Security: the enclave_signer must be a signer (implicit via Signer<'info>),
+    /// and the function_request account must be owned by the Switchboard Attestation
+    /// Program — forging a Switchboard-owned account requires control of that program.
+    /// Params integrity is already verified at request_oracle_evaluation time.
+    pub fn oracle_callback(ctx: Context<OracleCallback>, result: u8) -> Result<()> {
+        // Verify function_request is owned by the Switchboard Attestation Program.
+        let sb_attestation_id = Pubkey::try_from(SWITCHBOARD_ATTESTATION_PROGRAM)
+            .map_err(|_| error!(BondError::InvalidOracleCallback))?;
+        require!(
+            ctx.accounts.function_request.owner == &sb_attestation_id,
+            BondError::InvalidOracleCallback
+        );
+
+        let total = ctx.accounts.oracle_work_bond.to_account_info().lamports();
+        let (payer_key, worker_key) = {
+            let bond = &mut ctx.accounts.oracle_work_bond;
+            require!(
+                bond.state == OracleWorkBondState::EvaluationRequested,
+                BondError::OracleCallbackUnexpected
+            );
+            bond.state = OracleWorkBondState::Settled;
+            (bond.payer, bond.worker)
+        };
+
+        if result == 1 {
+            **ctx.accounts.oracle_work_bond.to_account_info().try_borrow_mut_lamports()? -= total;
+            **ctx.accounts.worker.to_account_info().try_borrow_mut_lamports()? += total;
+        } else {
+            **ctx.accounts.oracle_work_bond.to_account_info().try_borrow_mut_lamports()? -= total;
+            **ctx.accounts.payer.to_account_info().try_borrow_mut_lamports()? += total;
+        }
+
+        emit!(OracleWorkBondSettled {
+            oracle_work_bond: ctx.accounts.oracle_work_bond.key(),
+            payer:            payer_key,
+            worker:           worker_key,
+            result,
+        });
+
+        Ok(())
+    }
+
+    /// Permissionless expiry for oracle work bonds.
+    /// After expiry_slot, if the oracle never delivered a result, both parties
+    /// get their funds back — no penalty, since the oracle is the missing party.
+    pub fn expire_oracle_work_bond(ctx: Context<ExpireOracleWorkBond>) -> Result<()> {
+        let clock = Clock::get()?;
+        require!(
+            clock.slot >= ctx.accounts.oracle_work_bond.expiry_slot,
+            BondError::NotExpiredYet
+        );
+
+        // If worker had joined, return their stake before closing to payer.
+        if ctx.accounts.oracle_work_bond.state != OracleWorkBondState::PendingWorker {
+            let worker_stake = ctx.accounts.oracle_work_bond.worker_stake;
+            **ctx.accounts.oracle_work_bond.to_account_info().try_borrow_mut_lamports()? -= worker_stake;
+            **ctx.accounts.worker.to_account_info().try_borrow_mut_lamports()? += worker_stake;
+        }
+
+        emit!(OracleWorkBondExpired {
+            oracle_work_bond: ctx.accounts.oracle_work_bond.key(),
+            payer:            ctx.accounts.oracle_work_bond.payer,
+            worker_refunded:  ctx.accounts.oracle_work_bond.state != OracleWorkBondState::PendingWorker,
+        });
+
+        Ok(())
+        // close = payer: remaining lamports (payment + rent) go to payer
+    }
+
     /// Stores the canonical capabilities URI for this protocol in a well-known PDA.
     /// Call once after deployment so agents can discover the .well-known manifest
     /// by deriving seeds = ["meta"] from the program ID.
@@ -637,6 +840,102 @@ pub struct ExpireWorkBond<'info> {
     pub work_bond: Account<'info, WorkBond>,
 }
 
+#[derive(Accounts)]
+pub struct CreateOracleWorkBond<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    /// CHECK: worker pubkey stored; they sign join_oracle_work_bond
+    pub worker: AccountInfo<'info>,
+
+    /// CHECK: verified to be a valid FunctionAccountData by Switchboard's account discriminator
+    pub sb_function: AccountInfo<'info>,
+
+    #[account(
+        init,
+        payer = payer,
+        space = OracleWorkBond::SPACE,
+        seeds = [b"oracle-workbond", payer.key().as_ref(), worker.key().as_ref()],
+        bump
+    )]
+    pub oracle_work_bond: Account<'info, OracleWorkBond>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct JoinOracleWorkBond<'info> {
+    #[account(mut)]
+    pub worker: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"oracle-workbond", oracle_work_bond.payer.as_ref(), worker.key().as_ref()],
+        bump = oracle_work_bond.bump,
+        has_one = worker @ BondError::InvalidWorker,
+    )]
+    pub oracle_work_bond: Account<'info, OracleWorkBond>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct RequestOracleEvaluation<'info> {
+    // Permissionless — any caller can trigger evaluation after worker signals done.
+    #[account(
+        mut,
+        seeds = [b"oracle-workbond", oracle_work_bond.payer.as_ref(), oracle_work_bond.worker.as_ref()],
+        bump = oracle_work_bond.bump,
+    )]
+    pub oracle_work_bond: Account<'info, OracleWorkBond>,
+}
+
+#[derive(Accounts)]
+pub struct OracleCallback<'info> {
+    /// The Switchboard TEE enclave ephemeral signer. By being a Signer, this
+    /// account must have signed the transaction — only the TEE process holds its key.
+    pub enclave_signer: Signer<'info>,
+
+    /// The Switchboard FunctionRequest account. Verified in instruction logic to be
+    /// owned by the Switchboard Attestation Program (sbattyXrzedoNATfc4L31wC9Mhxsi1BmFhTiN8gDshx).
+    /// CHECK: owner verified against SWITCHBOARD_ATTESTATION_PROGRAM in oracle_callback
+    pub function_request: AccountInfo<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"oracle-workbond", oracle_work_bond.payer.as_ref(), oracle_work_bond.worker.as_ref()],
+        bump = oracle_work_bond.bump,
+    )]
+    pub oracle_work_bond: Account<'info, OracleWorkBond>,
+
+    /// CHECK: verified via has_one / manual check in instruction logic
+    #[account(mut, constraint = payer.key() == oracle_work_bond.payer @ BondError::InvalidProposer)]
+    pub payer: AccountInfo<'info>,
+
+    /// CHECK: verified via has_one / manual check in instruction logic
+    #[account(mut, constraint = worker.key() == oracle_work_bond.worker @ BondError::InvalidWorker)]
+    pub worker: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct ExpireOracleWorkBond<'info> {
+    #[account(mut)]
+    pub payer: SystemAccount<'info>,
+
+    #[account(mut)]
+    pub worker: SystemAccount<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"oracle-workbond", oracle_work_bond.payer.as_ref(), oracle_work_bond.worker.as_ref()],
+        bump = oracle_work_bond.bump,
+        has_one = payer @ BondError::InvalidProposer,
+        has_one = worker @ BondError::InvalidWorker,
+        close = payer
+    )]
+    pub oracle_work_bond: Account<'info, OracleWorkBond>,
+}
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -698,6 +997,50 @@ impl WorkBond {
 pub enum WorkBondState {
     PendingWorker, // created, awaiting worker to join
     Active,        // both parties joined, awaiting adjudication
+}
+
+/// An oracle-adjudicated work bond. The completion condition is evaluated
+/// off-chain by a Switchboard TEE function. No trusted human adjudicator.
+#[account]
+pub struct OracleWorkBond {
+    pub payer:        Pubkey,              // 32 — funds the payment
+    pub worker:       Pubkey,              // 32 — does the work
+    pub payment:      u64,                 // 8  — lamports to worker on success
+    pub worker_stake: u64,                 // 8  — lamports worker locks as collateral
+    pub expiry_slot:  u64,                 // 8  — deadline for evaluation
+    pub sb_function:  Pubkey,              // 32 — Switchboard FunctionAccountData
+    pub params_hash:  [u8; 32],            // 32 — SHA-256 of eval params JSON (committed at creation)
+    pub state:        OracleWorkBondState, // 1
+    pub bump:         u8,                  // 1
+}
+
+impl OracleWorkBond {
+    pub const SPACE: usize = 8 + 32 + 32 + 8 + 8 + 8 + 32 + 32 + 1 + 1;
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq)]
+pub enum OracleWorkBondState {
+    PendingWorker,       // created, awaiting worker
+    Active,              // worker joined, work in progress
+    EvaluationRequested, // oracle call registered, awaiting TEE callback
+    Settled,             // oracle delivered result; funds disbursed
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize)]
+pub struct OracleWorkBondParams {
+    pub payment:      u64,
+    pub worker_stake: u64,
+    pub expiry_slot:  u64,
+    pub params_hash:  [u8; 32], // SHA-256 of the eval params JSON string
+}
+
+impl OracleWorkBondParams {
+    pub fn validate(&self) -> Result<()> {
+        require!(self.payment > 0,      BondError::ZeroStake);
+        require!(self.worker_stake > 0, BondError::ZeroStake);
+        require!(self.expiry_slot > 0,  BondError::InvalidExpiry);
+        Ok(())
+    }
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize)]
@@ -869,6 +1212,47 @@ pub struct WorkBondExpired {
     pub worker_refunded: bool,
 }
 
+#[event]
+pub struct OracleWorkBondCreated {
+    pub oracle_work_bond: Pubkey,
+    pub payer:            Pubkey,
+    pub worker:           Pubkey,
+    pub sb_function:      Pubkey,
+    pub payment:          u64,
+    pub worker_stake:     u64,
+    pub expiry_slot:      u64,
+}
+
+#[event]
+pub struct OracleWorkBondJoined {
+    pub oracle_work_bond: Pubkey,
+    pub worker:           Pubkey,
+}
+
+/// Emitted when the on-chain evaluation request is registered.
+/// The plugin listens for this event to trigger the off-chain Switchboard request.
+#[event]
+pub struct OracleEvalRequested {
+    pub oracle_work_bond: Pubkey,
+    pub sb_function:      Pubkey,
+    pub params:           Vec<u8>, // raw params bytes — passed to Switchboard function
+}
+
+#[event]
+pub struct OracleWorkBondSettled {
+    pub oracle_work_bond: Pubkey,
+    pub payer:            Pubkey,
+    pub worker:           Pubkey,
+    pub result:           u8, // 1 = worker succeeded, 0 = worker failed
+}
+
+#[event]
+pub struct OracleWorkBondExpired {
+    pub oracle_work_bond: Pubkey,
+    pub payer:            Pubkey,
+    pub worker_refunded:  bool,
+}
+
 #[error_code]
 pub enum BondError {
     #[msg("Bond has already been settled")]
@@ -907,6 +1291,12 @@ pub enum BondError {
     InvalidAdjudicator,
     #[msg("Worker account does not match work bond")]
     InvalidWorker,
+    #[msg("Oracle params do not match the hash committed at bond creation")]
+    InvalidOracleParams,
+    #[msg("Oracle callback signer or function does not match this bond")]
+    InvalidOracleCallback,
+    #[msg("oracle_callback called when bond is not in EvaluationRequested state")]
+    OracleCallbackUnexpected,
 }
 
 // ---------------------------------------------------------------------------

@@ -250,13 +250,122 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "create_oracle_work_bond",
+      "discriminator": [50, 142, 62, 98, 27, 144, 191, 78],
+      "accounts": [
+        { "name": "payer", "writable": true, "signer": true },
+        { "name": "worker" },
+        { "name": "sb_function" },
+        {
+          "name": "oracle_work_bond",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [111, 114, 97, 99, 108, 101, 45, 119, 111, 114, 107, 98, 111, 110, 100] },
+              { "kind": "account", "path": "payer" },
+              { "kind": "account", "path": "worker" }
+            ]
+          }
+        },
+        { "name": "system_program", "address": "11111111111111111111111111111111" }
+      ],
+      "args": [
+        { "name": "params", "type": { "defined": { "name": "OracleWorkBondParams" } } }
+      ]
+    },
+    {
+      "name": "join_oracle_work_bond",
+      "discriminator": [104, 36, 246, 51, 99, 62, 93, 85],
+      "accounts": [
+        { "name": "worker", "writable": true, "signer": true },
+        {
+          "name": "oracle_work_bond",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [111, 114, 97, 99, 108, 101, 45, 119, 111, 114, 107, 98, 111, 110, 100] },
+              { "kind": "account", "path": "oracle_work_bond.payer" },
+              { "kind": "account", "path": "worker" }
+            ]
+          }
+        },
+        { "name": "system_program", "address": "11111111111111111111111111111111" }
+      ],
+      "args": []
+    },
+    {
+      "name": "request_oracle_evaluation",
+      "discriminator": [135, 61, 17, 7, 247, 156, 10, 236],
+      "accounts": [
+        {
+          "name": "oracle_work_bond",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [111, 114, 97, 99, 108, 101, 45, 119, 111, 114, 107, 98, 111, 110, 100] },
+              { "kind": "account", "path": "oracle_work_bond.payer" },
+              { "kind": "account", "path": "oracle_work_bond.worker" }
+            ]
+          }
+        }
+      ],
+      "args": [
+        { "name": "params", "type": "bytes" }
+      ]
+    },
+    {
+      "name": "oracle_callback",
+      "discriminator": [210, 86, 157, 123, 251, 70, 49, 20],
+      "accounts": [
+        { "name": "enclave_signer", "signer": true },
+        { "name": "function_request" },
+        {
+          "name": "oracle_work_bond",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [111, 114, 97, 99, 108, 101, 45, 119, 111, 114, 107, 98, 111, 110, 100] },
+              { "kind": "account", "path": "oracle_work_bond.payer" },
+              { "kind": "account", "path": "oracle_work_bond.worker" }
+            ]
+          }
+        },
+        { "name": "payer", "writable": true },
+        { "name": "worker", "writable": true }
+      ],
+      "args": [
+        { "name": "result", "type": "u8" }
+      ]
+    },
+    {
+      "name": "expire_oracle_work_bond",
+      "discriminator": [59, 36, 135, 2, 252, 28, 142, 126],
+      "accounts": [
+        { "name": "payer", "writable": true },
+        { "name": "worker", "writable": true },
+        {
+          "name": "oracle_work_bond",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              { "kind": "const", "value": [111, 114, 97, 99, 108, 101, 45, 119, 111, 114, 107, 98, 111, 110, 100] },
+              { "kind": "account", "path": "oracle_work_bond.payer" },
+              { "kind": "account", "path": "oracle_work_bond.worker" }
+            ]
+          }
+        }
+      ],
+      "args": []
     }
   ],
   "accounts": [
     { "name": "Bond",         "discriminator": [224, 128, 48, 251, 182, 246, 111, 196] },
     { "name": "BondProposal", "discriminator": [9, 155, 184, 109, 239, 136, 80, 77] },
     { "name": "ProtocolMeta", "discriminator": [82, 127, 47, 156, 193, 110, 213, 233] },
-    { "name": "WorkBond",     "discriminator": [210, 210, 222, 171, 179, 60, 73, 78] }
+    { "name": "WorkBond",        "discriminator": [210, 210, 222, 171, 179, 60, 73, 78] },
+    { "name": "OracleWorkBond", "discriminator": [180, 62, 23, 148, 103, 203, 32, 39] }
   ],
   "events": [
     { "name": "BondInitialised",  "discriminator": [84, 236, 134, 2, 5, 34, 101, 144] },
@@ -267,7 +376,12 @@
     { "name": "WorkBondJoined",   "discriminator": [52, 231, 203, 86, 167, 47, 140, 209] },
     { "name": "WorkBondCompleted","discriminator": [43, 198, 98, 150, 54, 11, 7, 125] },
     { "name": "WorkBondFailed",   "discriminator": [17, 189, 79, 17, 156, 96, 226, 28] },
-    { "name": "WorkBondExpired",  "discriminator": [192, 30, 195, 134, 19, 184, 59, 243] }
+    { "name": "WorkBondExpired",       "discriminator": [192, 30, 195, 134, 19, 184, 59, 243] },
+    { "name": "OracleWorkBondCreated", "discriminator": [35, 134, 43, 189, 144, 2, 193, 83] },
+    { "name": "OracleWorkBondJoined",  "discriminator": [170, 18, 76, 65, 77, 195, 244, 151] },
+    { "name": "OracleEvalRequested",   "discriminator": [43, 211, 36, 74, 3, 206, 220, 226] },
+    { "name": "OracleWorkBondSettled", "discriminator": [145, 3, 225, 68, 64, 98, 111, 32] },
+    { "name": "OracleWorkBondExpired", "discriminator": [60, 194, 121, 175, 241, 40, 155, 145] }
   ],
   "errors": [
     { "code": 6000, "name": "AlreadySettled",          "msg": "Bond has already been settled" },
@@ -286,8 +400,11 @@
     { "code": 6013, "name": "UriTooLong",               "msg": "Capabilities URI exceeds 200-byte limit" },
     { "code": 6014, "name": "WorkBondNotPendingWorker", "msg": "Work bond is not in PendingWorker state" },
     { "code": 6015, "name": "WorkBondNotActive",        "msg": "Work bond is not in Active state" },
-    { "code": 6016, "name": "InvalidAdjudicator",       "msg": "Adjudicator account does not match work bond" },
-    { "code": 6017, "name": "InvalidWorker",            "msg": "Worker account does not match work bond" }
+    { "code": 6016, "name": "InvalidAdjudicator",          "msg": "Adjudicator account does not match work bond" },
+    { "code": 6017, "name": "InvalidWorker",               "msg": "Worker account does not match work bond" },
+    { "code": 6018, "name": "InvalidOracleParams",         "msg": "Oracle params do not match committed hash" },
+    { "code": 6019, "name": "InvalidOracleCallback",       "msg": "Oracle callback account is not a valid Switchboard FunctionRequest" },
+    { "code": 6020, "name": "OracleCallbackUnexpected",    "msg": "Oracle callback received in unexpected state" }
   ],
   "types": [
     {
@@ -419,6 +536,47 @@
       }
     },
     {
+      "name": "OracleWorkBondState",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          { "name": "PendingWorker" },
+          { "name": "Active" },
+          { "name": "EvaluationRequested" },
+          { "name": "Settled" }
+        ]
+      }
+    },
+    {
+      "name": "OracleWorkBond",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "payer",        "type": "pubkey" },
+          { "name": "worker",       "type": "pubkey" },
+          { "name": "payment",      "type": "u64" },
+          { "name": "worker_stake", "type": "u64" },
+          { "name": "expiry_slot",  "type": "u64" },
+          { "name": "sb_function",  "type": "pubkey" },
+          { "name": "params_hash",  "type": { "array": ["u8", 32] } },
+          { "name": "state",        "type": { "defined": { "name": "OracleWorkBondState" } } },
+          { "name": "bump",         "type": "u8" }
+        ]
+      }
+    },
+    {
+      "name": "OracleWorkBondParams",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "payment",      "type": "u64" },
+          { "name": "worker_stake", "type": "u64" },
+          { "name": "expiry_slot",  "type": "u64" },
+          { "name": "params_hash",  "type": { "array": ["u8", 32] } }
+        ]
+      }
+    },
+    {
       "name": "BondInitialised",
       "type": { "kind": "struct", "fields": [
         { "name": "bond",         "type": "pubkey" },
@@ -497,6 +655,50 @@
         { "name": "work_bond",       "type": "pubkey" },
         { "name": "payer",           "type": "pubkey" },
         { "name": "worker_refunded", "type": "bool" }
+      ]}
+    },
+    {
+      "name": "OracleWorkBondCreated",
+      "type": { "kind": "struct", "fields": [
+        { "name": "oracle_work_bond", "type": "pubkey" },
+        { "name": "payer",            "type": "pubkey" },
+        { "name": "worker",           "type": "pubkey" },
+        { "name": "sb_function",      "type": "pubkey" },
+        { "name": "payment",          "type": "u64" },
+        { "name": "worker_stake",     "type": "u64" },
+        { "name": "expiry_slot",      "type": "u64" }
+      ]}
+    },
+    {
+      "name": "OracleWorkBondJoined",
+      "type": { "kind": "struct", "fields": [
+        { "name": "oracle_work_bond", "type": "pubkey" },
+        { "name": "worker",           "type": "pubkey" }
+      ]}
+    },
+    {
+      "name": "OracleEvalRequested",
+      "type": { "kind": "struct", "fields": [
+        { "name": "oracle_work_bond", "type": "pubkey" },
+        { "name": "sb_function",      "type": "pubkey" },
+        { "name": "params",           "type": "bytes" }
+      ]}
+    },
+    {
+      "name": "OracleWorkBondSettled",
+      "type": { "kind": "struct", "fields": [
+        { "name": "oracle_work_bond", "type": "pubkey" },
+        { "name": "payer",            "type": "pubkey" },
+        { "name": "worker",           "type": "pubkey" },
+        { "name": "result",           "type": "u8" }
+      ]}
+    },
+    {
+      "name": "OracleWorkBondExpired",
+      "type": { "kind": "struct", "fields": [
+        { "name": "oracle_work_bond", "type": "pubkey" },
+        { "name": "payer",            "type": "pubkey" },
+        { "name": "worker_refunded",  "type": "bool" }
       ]}
     }
   ]

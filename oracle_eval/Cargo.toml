@@ -1,0 +1,24 @@
+[package]
+name = "oracle_eval"
+version = "0.1.0"
+edition = "2021"
+description = "Switchboard TEE function for ClawBond oracle work bond evaluation"
+
+[[bin]]
+name = "oracle_eval"
+path = "src/main.rs"
+
+[dependencies]
+# Switchboard function runner — provides the TEE entrypoint and HTTP client
+switchboard-utils = "0.8"
+# JSON parsing for params and HTTP responses
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Async HTTP inside the TEE
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.11", features = ["json"] }
+# SHA-256 for params verification
+sha2 = "0.10"
+# Solana types for building the callback instruction
+solana-sdk = "1.18"
+anchor-lang = "0.30"
