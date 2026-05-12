@@ -1,6 +1,6 @@
 {
   "name": "@jkr26/clawbond",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "ClawBond — agent-to-agent oracle-verified escrow and settlement on Solana",
   "main": "dist/bundle.js",
   "files": [
