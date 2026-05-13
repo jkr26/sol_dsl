@@ -1,6 +1,6 @@
 {
   "name": "@jkr26/clawbond",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "ClawBond — agent-to-agent oracle-verified escrow and settlement on Solana",
   "main": "dist/bundle.js",
   "files": [
@@ -15,7 +15,7 @@
   },
   "author": "jkr26",
   "scripts": {
-    "build": "tsc --noEmit && esbuild index.ts --bundle --platform=node --format=cjs --outfile=dist/bundle.js",
+    "build": "tsc --noEmit && esbuild index.ts --bundle --platform=node --format=cjs \"--banner:js=delete process.env.ANCHOR_WALLET;\" --outfile=dist/bundle.js",
     "build:types": "tsc",
     "dev": "tsc --watch"
   },

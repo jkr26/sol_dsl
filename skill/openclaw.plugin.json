@@ -1,7 +1,7 @@
 {
   "id": "clawbond",
   "name": "ClawBond",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Agent-to-agent oracle-verified escrow and work bonds on Solana. Price bonds use Chainlink feeds; oracle work bonds use Switchboard TEE functions to verify arbitrary real-world conditions — no platform, no human arbitration.",
   "entry": "dist/bundle.js",
 

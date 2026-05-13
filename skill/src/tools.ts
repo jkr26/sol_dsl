@@ -1608,34 +1608,9 @@ export function registerWagerTools(cfg: PluginConfig) {
             .accounts({ oracleWorkBond: bondPk })
             .rpc();
 
-          // 2. Create and trigger a Switchboard FunctionRequest off-chain.
-          // The Switchboard SDK is called here so the oracle network picks up the job.
-          // switchboard_request_signature is null in environments without the SB SDK.
-          let switchboard_request_signature: string | null = null;
-          try {
-            // Optional dependency — bypass TS module resolution with indirect import
-            const sbPkg = "@switchboard-xyz/solana.js";
-            // eslint-disable-next-line @typescript-eslint/no-implied-eval
-            const { SwitchboardProgram, FunctionAccount, FunctionRequestAccount } =
-              await (new Function("m", "return import(m)"))(sbPkg) as any;
-            const sbProgram = await SwitchboardProgram.load("devnet", connection);
-            const [fnAccount] = FunctionAccount.fromSeed(sbProgram, acc.sbFunction);
-            const [requestAccount, requestSig] = await FunctionRequestAccount.create(
-              sbProgram,
-              {
-                function: fnAccount,
-                params: paramsBytes,
-                authority: wallet,
-              }
-            );
-            await requestAccount.trigger(wallet);
-            switchboard_request_signature = requestSig;
-          } catch (sbErr) {
-            // Switchboard SDK may not be installed in all environments.
-            // The on-chain request is registered; the oracle can still be triggered
-            // manually using the Switchboard CLI: `sb request trigger <request_key>`
-          }
-
+          // The on-chain OracleEvalRequested event is sufficient — the Switchboard oracle
+          // network monitors all registered function requests and picks up the job
+          // automatically. No additional SDK call is needed from the plugin.
           const currentSlot = await connection.getSlot();
           return {
             content: [{
@@ -1645,12 +1620,9 @@ export function registerWagerTools(cfg: PluginConfig) {
                 oracle_work_bond_pda: bondPk.toBase58(),
                 bond_pda: bondPk.toBase58(),
                 on_chain_signature: sig,
-                switchboard_request_signature,
                 current_slot: currentSlot,
                 sb_function: acc.sbFunction.toBase58(),
-                note: switchboard_request_signature
-                  ? "Switchboard request triggered. The TEE oracle will evaluate the condition and call oracle_callback automatically."
-                  : "On-chain request registered. Trigger the Switchboard request manually: `sb request trigger --function <sb_function>` with the params_json.",
+                note: "On-chain evaluation request registered. The Switchboard oracle network will pick up the OracleEvalRequested event and call oracle_callback automatically once the TEE function runs.",
               }),
             }],
           };
